@@ -4,6 +4,7 @@
 
 mod conflict;
 mod diff;
+mod engine;
 mod error;
 mod local_io;
 
@@ -12,5 +13,6 @@ pub use conflict::{
     Resolution,
 };
 pub use diff::{diff, DiffOp};
+pub use engine::{sync, ManagedFile, SyncContext, SyncReport};
 pub use error::SyncError;
 pub use local_io::{open_sealed, read_and_seal, write_plaintext, SealedFile};
