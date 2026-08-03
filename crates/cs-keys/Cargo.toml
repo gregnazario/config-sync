@@ -35,15 +35,13 @@ version = "3"
 optional = true
 default-features = false
 
-# --- security-framework (macOS biometric access control) ------------------
-[dependencies.security-framework]
-version = "3"
-optional = true
-
 # --- per-target native backends ------------------------------------------
 # Each target only activates its own backend; the others are no-ops there.
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", optional = true, default-features = false, features = ["apple-native"] }
+# security-framework is macOS-only; gating it here stops Windows/Linux from
+# trying to compile core-foundation (which needs os::unix).
+security-framework = { version = "3", optional = true }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 keyring = { version = "3", optional = true, default-features = false, features = ["apple-native"] }
