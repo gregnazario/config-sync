@@ -8,6 +8,7 @@ mod aad;
 mod error;
 mod kem;
 mod keys;
+mod wrap;
 
 pub use aad::Aad;
 pub use error::CryptoError;
@@ -16,3 +17,4 @@ pub use kem::{
     RecipientKeys, RecipientSecrets,
 };
 pub use keys::{generate_dek, generate_mk, generate_rik, Dek, Mk, Rik};
+pub use wrap::{unwrap_key, wrap_key, WrappedKey};
