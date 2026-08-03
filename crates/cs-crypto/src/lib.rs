@@ -6,6 +6,8 @@
 
 mod aad;
 mod error;
+mod keys;
 
 pub use aad::Aad;
 pub use error::CryptoError;
+pub use keys::{generate_dek, generate_mk, generate_rik, Dek, Mk, Rik};

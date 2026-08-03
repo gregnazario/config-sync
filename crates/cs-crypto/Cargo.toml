@@ -8,3 +8,4 @@ license.workspace = true
 thiserror = { workspace = true }
 zeroize = { workspace = true }
 serde = { workspace = true }
+getrandom = "0.3"
