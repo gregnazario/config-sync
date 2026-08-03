@@ -11,6 +11,9 @@ mod local_fs;
 #[cfg(feature = "s3")]
 mod s3;
 
+#[cfg(feature = "webdav")]
+mod webdav;
+
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::ops::Range;
@@ -59,6 +62,9 @@ pub use local_fs::LocalFs;
 
 #[cfg(feature = "s3")]
 pub use s3::S3Store;
+
+#[cfg(feature = "webdav")]
+pub use webdav::WebDavStore;
 
 #[cfg(test)]
 mod trait_tests {
