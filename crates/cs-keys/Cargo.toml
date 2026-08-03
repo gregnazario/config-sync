@@ -26,8 +26,9 @@ default = []
 #   FreeBSD/OpenBSD-> sync-secret-service (Secret Service via D-Bus)
 keyring = ["dep:keyring"]
 # Enable biometric-gated storage (Touch ID / Face ID + device passcode on
-# macOS; falls back to the regular keyring store on other platforms).
-biometric = ["keyring", "dep:security-framework"]
+# macOS; Windows Hello on Windows; falls back to the regular keyring store on
+# Linux/FreeBSD).
+biometric = ["keyring", "dep:security-framework", "dep:windows"]
 
 # --- keyring core ---------------------------------------------------------
 [dependencies.keyring]
@@ -48,6 +49,7 @@ keyring = { version = "3", optional = true, default-features = false, features =
 
 [target.'cfg(target_os = "windows")'.dependencies]
 keyring = { version = "3", optional = true, default-features = false, features = ["windows-native"] }
+windows = { version = "0.61", optional = true, features = ["Security_Credentials_UI", "Foundation"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", optional = true, default-features = false, features = ["linux-native-sync-persistent"] }
