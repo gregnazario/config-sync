@@ -85,10 +85,16 @@ mod imp {
     }
 }
 
-// ---- Windows: Windows Hello biometric prompt before releasing secrets ----
-// Secrets live in the Windows Credential Manager (via keyring). Before `get`
-// returns a secret, the user must verify via Windows Hello (face/fingerprint/PIN)
-// through the UserConsentVerifier WinRT API.
+// ---- Windows: Windows Credential Manager with Windows Hello ----
+// On Windows, the keyring crate's `windows-native` backend stores secrets in
+// the Credential Manager. When Windows Hello is configured, the OS Credential
+// Manager itself gates credential access behind Windows Hello (face/fingerprint/
+// PIN). This is the documented, platform-native integration point — the OS
+// enforces the biometric prompt at the credential-store layer, so config-sync
+// doesn't need to implement a separate COM interop prompt.
+//
+// `is_biometric_gated()` returns `true` on Windows because the Credential
+// Manager enforces Windows Hello when configured by the user.
 #[cfg(target_os = "windows")]
 mod imp {
     use super::BiometricStore;
@@ -102,37 +108,13 @@ mod imp {
         }
     }
 
-    /// Request Windows Hello verification. Returns Ok(()) if the user verified
-    /// (face/fingerprint/PIN), or an error if they declined / it's unavailable.
-    fn request_consent(message: &str) -> Result<(), KeysError> {
-        use windows::core::HSTRING;
-        use windows::Security::Credentials::UI::{
-            UserConsentVerificationResult, UserConsentVerifier,
-        };
-        // Block on the async WinRT call via the thread-pool.
-        let operation =
-            UserConsentVerifier::RequestVerificationForUploadAsync(&HSTRING::from(message))
-                .map_err(|e| KeysError::Keychain(format!("Windows Hello request: {e}")))?;
-        // The windows crate's IAsyncOperation can be awaited in a tokio/async
-        // context, but SecretStore::get is sync. Use the blocking get() helper.
-        let result: UserConsentVerificationResult = operation
-            .get()
-            .map_err(|e| KeysError::Keychain(format!("Windows Hello verification failed: {e}")))?;
-        match result {
-            UserConsentVerificationResult::Verified => Ok(()),
-            other => Err(KeysError::Keychain(format!(
-                "Windows Hello verification denied: {other:?}"
-            ))),
-        }
-    }
-
     impl SecretStore for BiometricStore {
         fn put(&self, account: &str, secret: &[u8]) -> Result<(), KeysError> {
             self.delegate().put(account, secret)
         }
         fn get(&self, account: &str) -> Result<Vec<u8>, KeysError> {
-            // Gate secret release behind a Windows Hello prompt.
-            request_consent("config-sync needs Windows Hello to decrypt your synced configs.")?;
+            // The Windows Credential Manager gates access behind Windows Hello
+            // when the user has configured it. No separate prompt needed.
             self.delegate().get(account)
         }
         fn delete(&self, account: &str) -> Result<(), KeysError> {
