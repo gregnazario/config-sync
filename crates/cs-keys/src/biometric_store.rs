@@ -153,14 +153,11 @@ mod imp {
     fn verify_fingerprint() -> Result<(), KeysError> {
         use zbus::blocking::Connection;
 
-        // Connect to the system bus.
         let conn = match Connection::system() {
             Ok(c) => c,
-            Err(_) => return Ok(()), // No D-Bus system bus → skip biometrics.
+            Err(_) => return Ok(()),
         };
 
-        // List enrolled fingers to check fprintd is available + a device exists.
-        // fprintd D-Bus service: net.reactivated.Fprint, manager path /net/reactivated/Fprint/Manager
         let proxy = match zbus::blocking::Proxy::new(
             &conn,
             "net.reactivated.Fprint",
@@ -168,20 +165,19 @@ mod imp {
             "net.reactivated.Fprint.Manager",
         ) {
             Ok(p) => p,
-            Err(_) => return Ok(()), // fprintd not running → skip.
+            Err(_) => return Ok(()),
         };
 
         // Get the default device path.
         let device_path: zbus::zvariant::OwnedObjectPath =
             match proxy.call_method("GetDefaultDevice", &()) {
-                Ok(r) => match r.body.deserialize() {
+                Ok(msg) => match msg.body().deserialize::<zbus::zvariant::OwnedObjectPath>() {
                     Ok(path) => path,
                     Err(_) => return Ok(()),
                 },
-                Err(_) => return Ok(()), // No fingerprint device → skip.
+                Err(_) => return Ok(()),
             };
 
-        // Open the device, claim it, verify.
         let device = match zbus::blocking::Proxy::new(
             &conn,
             "net.reactivated.Fprint",
@@ -192,49 +188,46 @@ mod imp {
             Err(_) => return Ok(()),
         };
 
-        // Claim the device for this session.
-        let _: () = device.call_method("Claim", &("config-sync")).unwrap_or(());
+        // Claim the device.
+        let _ = device.call_method("Claim", &("config-sync"));
 
         // Start verification for any enrolled finger.
-        let _: () = match device.call_method("VerifyFinger", &("any")) {
-            Ok(r) => r.body.deserialize().unwrap_or(()),
-            Err(e) => {
-                let _: () = device.call_method("Release", &()).unwrap_or(());
-                return Err(KeysError::Keychain(format!(
-                    "fprintd: VerifyFinger failed: {e}"
-                )));
-            }
-        };
+        if device.call_method("VerifyFinger", &("any")).is_err() {
+            let _ = device.call_method("Release", &());
+            return Err(KeysError::Keychain("fprintd: VerifyFinger failed".into()));
+        }
 
-        // Wait for the VerifyStatus signal (blocking until the scan completes).
-        // The signal carries ("verify-match" | "verify-no-match" | "verify-retry-scan" | ...).
-        let result = || -> Result<(), KeysError> {
-            while let Some(msg) = conn
-                .receive_specific_message(|m| {
-                    m.member().map(|n| n.as_str()) == Some("VerifyStatus")
-                })
-                .ok()
-            {
-                if let Ok((result_str,)) = msg.body.deserialize::<(String,)>() {
-                    match result_str.as_str() {
-                        "verify-match" => return Ok(()),
-                        "verify-no-match" => {
-                            return Err(KeysError::Keychain(
-                                "fprintd: fingerprint did not match".into(),
-                            ))
+        // Wait for the VerifyStatus signal via the device proxy.
+        let outcome = match device.receive_signal("VerifyStatus") {
+            Ok(iter) => {
+                let mut result = Err(KeysError::Keychain(
+                    "fprintd: verification interrupted".into(),
+                ));
+                for msg in iter {
+                    if let Ok((status,)) = msg.body().deserialize::<(String,)>() {
+                        match status.as_str() {
+                            "verify-match" => {
+                                result = Ok(());
+                                break;
+                            }
+                            "verify-no-match" => {
+                                result = Err(KeysError::Keychain(
+                                    "fprintd: fingerprint did not match".into(),
+                                ));
+                                break;
+                            }
+                            _ => {}
                         }
-                        _ => { /* retry-scan etc. — keep waiting */ }
                     }
                 }
+                result
             }
-            Err(KeysError::Keychain(
-                "fprintd: verification interrupted".into(),
-            ))
+            Err(e) => Err(KeysError::Keychain(format!(
+                "fprintd: signal receive failed: {e}"
+            ))),
         };
 
-        let outcome = result();
-        // Always release the device.
-        let _: () = device.call_method("Release", &()).unwrap_or(());
+        let _ = device.call_method("Release", &());
         outcome
     }
 
