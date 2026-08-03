@@ -18,8 +18,33 @@ getrandom = "0.3"
 
 [features]
 default = []
+# Enable OS keychain-backed storage. Selecting this feature automatically pulls
+# the correct native backend for the compile target:
+#   macOS          -> apple-native (Keychain)
+#   Windows        -> windows-native (Credential Manager / NGC)
+#   Linux          -> linux-native-sync-persistent (linux-keyutils + Secret Service)
+#   FreeBSD/OpenBSD-> sync-secret-service (Secret Service via D-Bus)
 keyring = ["dep:keyring"]
 
+# --- keyring core ---------------------------------------------------------
 [dependencies.keyring]
 version = "3"
 optional = true
+default-features = false
+
+# --- per-target native backends ------------------------------------------
+# Each target only activates its own backend; the others are no-ops there.
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", optional = true, default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+keyring = { version = "3", optional = true, default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", optional = true, default-features = false, features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", optional = true, default-features = false, features = ["linux-native-sync-persistent"] }
+
+[target.'cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))'.dependencies]
+keyring = { version = "3", optional = true, default-features = false, features = ["sync-secret-service"] }
