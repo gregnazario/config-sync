@@ -8,6 +8,8 @@ license.workspace = true
 thiserror = { workspace = true }
 cs-crypto = { path = "../cs-crypto" }
 base64 = "0.22"
+serde = { workspace = true }
+postcard = { version = "1", features = ["alloc"] }
 
 [features]
 default = []
