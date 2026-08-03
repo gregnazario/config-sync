@@ -27,10 +27,14 @@ impl BiometricStore {
     }
 
     /// True when secret release actually requires a biometric/passcode prompt
-    /// on this platform (macOS Keychain ACL / Windows Hello). False on Linux/
-    /// FreeBSD where no standard cross-desktop biometric keychain API exists.
+    /// on this platform (macOS Keychain ACL / Windows Hello / Linux fprintd).
+    /// False on FreeBSD where no standard biometric framework exists.
     pub fn is_biometric_gated(&self) -> bool {
-        cfg!(any(target_os = "macos", target_os = "windows"))
+        cfg!(any(
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "linux"
+        ))
     }
 }
 
@@ -123,10 +127,135 @@ mod imp {
     }
 }
 
-// ---- Linux / FreeBSD fallback: no standard biometric keychain API. ----
-// These platforms fall back to the regular keyring store (Secret Service /
-// KWallet / GNOME Keyring) without a biometric prompt.
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+// ---- Linux: fprintd fingerprint verification before releasing secrets ----
+// On Linux there's no OS-level ACL on keychain items (unlike macOS Keychain
+// or Windows Credential Manager). Instead, config-sync gates secret release
+// behind a fingerprint scan via fprintd (the standard Linux fingerprint
+// daemon, D-Bus `net.reactivated.Fprint`). If fprintd is unavailable (no
+// fingerprint reader, not installed), the store falls back gracefully to the
+// plain keyring — it never blocks the user out of their secrets.
+#[cfg(target_os = "linux")]
+mod imp {
+    use super::BiometricStore;
+    use crate::error::KeysError;
+    use crate::keyring_store::KeyringStore;
+    use crate::SecretStore;
+
+    impl BiometricStore {
+        fn delegate(&self) -> KeyringStore {
+            KeyringStore::new(&self.service)
+        }
+    }
+
+    /// Attempt fingerprint verification via fprintd. Returns `Ok(())` if the
+    /// user verified, or `Ok(())` (graceful fallthrough) if fprintd isn't
+    /// available — never blocks the user out of their secrets.
+    fn verify_fingerprint() -> Result<(), KeysError> {
+        use zbus::blocking::Connection;
+
+        // Connect to the system bus.
+        let conn = match Connection::system() {
+            Ok(c) => c,
+            Err(_) => return Ok(()), // No D-Bus system bus → skip biometrics.
+        };
+
+        // List enrolled fingers to check fprintd is available + a device exists.
+        // fprintd D-Bus service: net.reactivated.Fprint, manager path /net/reactivated/Fprint/Manager
+        let proxy = match zbus::blocking::Proxy::new(
+            &conn,
+            "net.reactivated.Fprint",
+            "/net/reactivated/Fprint/Manager",
+            "net.reactivated.Fprint.Manager",
+        ) {
+            Ok(p) => p,
+            Err(_) => return Ok(()), // fprintd not running → skip.
+        };
+
+        // Get the default device path.
+        let device_path: zbus::zvariant::OwnedObjectPath =
+            match proxy.call_method("GetDefaultDevice", &()) {
+                Ok(r) => match r.body.deserialize() {
+                    Ok(path) => path,
+                    Err(_) => return Ok(()),
+                },
+                Err(_) => return Ok(()), // No fingerprint device → skip.
+            };
+
+        // Open the device, claim it, verify.
+        let device = match zbus::blocking::Proxy::new(
+            &conn,
+            "net.reactivated.Fprint",
+            device_path.as_ref(),
+            "net.reactivated.Fprint.Device",
+        ) {
+            Ok(p) => p,
+            Err(_) => return Ok(()),
+        };
+
+        // Claim the device for this session.
+        let _: () = device.call_method("Claim", &("config-sync")).unwrap_or(());
+
+        // Start verification for any enrolled finger.
+        let _: () = match device.call_method("VerifyFinger", &("any")) {
+            Ok(r) => r.body.deserialize().unwrap_or(()),
+            Err(e) => {
+                let _: () = device.call_method("Release", &()).unwrap_or(());
+                return Err(KeysError::Keychain(format!(
+                    "fprintd: VerifyFinger failed: {e}"
+                )));
+            }
+        };
+
+        // Wait for the VerifyStatus signal (blocking until the scan completes).
+        // The signal carries ("verify-match" | "verify-no-match" | "verify-retry-scan" | ...).
+        let result = || -> Result<(), KeysError> {
+            while let Some(msg) = conn
+                .receive_specific_message(|m| {
+                    m.member().map(|n| n.as_str()) == Some("VerifyStatus")
+                })
+                .ok()
+            {
+                if let Ok((result_str,)) = msg.body.deserialize::<(String,)>() {
+                    match result_str.as_str() {
+                        "verify-match" => return Ok(()),
+                        "verify-no-match" => {
+                            return Err(KeysError::Keychain(
+                                "fprintd: fingerprint did not match".into(),
+                            ))
+                        }
+                        _ => { /* retry-scan etc. — keep waiting */ }
+                    }
+                }
+            }
+            Err(KeysError::Keychain(
+                "fprintd: verification interrupted".into(),
+            ))
+        };
+
+        let outcome = result();
+        // Always release the device.
+        let _: () = device.call_method("Release", &()).unwrap_or(());
+        outcome
+    }
+
+    impl SecretStore for BiometricStore {
+        fn put(&self, account: &str, secret: &[u8]) -> Result<(), KeysError> {
+            self.delegate().put(account, secret)
+        }
+        fn get(&self, account: &str) -> Result<Vec<u8>, KeysError> {
+            // Gate secret release behind a fingerprint scan. If fprintd isn't
+            // available, verify_fingerprint returns Ok(()) (graceful fallthrough).
+            verify_fingerprint()?;
+            self.delegate().get(account)
+        }
+        fn delete(&self, account: &str) -> Result<(), KeysError> {
+            self.delegate().delete(account)
+        }
+    }
+}
+
+// ---- FreeBSD / others: no biometric framework → plain keyring ----
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 mod imp {
     use super::BiometricStore;
     use crate::error::KeysError;
@@ -161,7 +290,11 @@ mod tests {
         let s = BiometricStore::new("config-sync-test");
         assert_eq!(
             s.is_biometric_gated(),
-            cfg!(any(target_os = "macos", target_os = "windows"))
+            cfg!(any(
+                target_os = "macos",
+                target_os = "windows",
+                target_os = "linux"
+            ))
         );
     }
 

@@ -28,7 +28,7 @@ keyring = ["dep:keyring"]
 # Enable biometric-gated storage (Touch ID / Face ID + device passcode on
 # macOS; Windows Hello on Windows; falls back to the regular keyring store on
 # Linux/FreeBSD).
-biometric = ["keyring", "dep:security-framework"]
+biometric = ["keyring", "dep:security-framework", "dep:zbus"]
 
 # --- keyring core ---------------------------------------------------------
 [dependencies.keyring]
@@ -52,6 +52,7 @@ keyring = { version = "3", optional = true, default-features = false, features =
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = { version = "3", optional = true, default-features = false, features = ["linux-native-sync-persistent"] }
+zbus = { version = "4", optional = true }
 
 [target.'cfg(any(target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))'.dependencies]
 keyring = { version = "3", optional = true, default-features = false, features = ["sync-secret-service"] }
