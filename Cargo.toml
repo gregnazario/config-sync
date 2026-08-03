@@ -5,6 +5,8 @@ members = [
     "crates/cs-keys",
     "crates/cs-storage",
     "crates/cs-config",
+    "crates/cs-manifest",
+    "crates/cs-sync",
     "crates/cs-integration-tests",
 ]
 

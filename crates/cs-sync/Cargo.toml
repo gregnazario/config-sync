@@ -1,0 +1,20 @@
+[package]
+name = "cs-sync"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cs-manifest = { path = "../cs-manifest" }
+cs-storage = { path = "../cs-storage" }
+cs-crypto = { path = "../cs-crypto" }
+cs-config = { path = "../cs-config" }
+thiserror = { workspace = true }
+serde = { workspace = true }
+postcard = { version = "1", features = ["alloc"] }
+tokio = { version = "1", features = ["fs", "io-util", "rt", "macros"] }
+bytes = { workspace = true }
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
