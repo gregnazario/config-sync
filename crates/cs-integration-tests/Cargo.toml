@@ -1,0 +1,15 @@
+[package]
+name = "cs-integration-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+cs-crypto = { path = "../cs-crypto" }
+cs-keys = { path = "../cs-keys" }
+cs-storage = { path = "../cs-storage" }
+cs-config = { path = "../cs-config" }
+tokio = { version = "1", features = ["macros", "rt"] }
+bytes = { workspace = true }
+tempfile = "3"

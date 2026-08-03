@@ -1,0 +1,9 @@
+[package]
+name = "cs-keys"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+cs-crypto = { path = "../cs-crypto" }
