@@ -1,0 +1,44 @@
+schema_version = 1
+
+[identity]
+device_id = "a1b2..."
+
+[[config]]
+name = "vim"
+conflict_policy = "prompt"
+ignore = ["*.swp", "*.tmp"]
+
+  [[config.location]]
+  host = "macbook-pro"
+  platform = ""
+  path = "~/.vimrc"
+
+  [[config.location]]
+  host = ""
+  platform = "windows"
+  path = "%APPDATA%/vim/_vimrc"
+
+  [[config.location]]
+  host = ""
+  platform = "linux"
+  path = "~/.config/nvim/init.vim"
+
+  [config.fields]
+  theme = ""
+  editor = ""
+
+[storage]
+primary = "local-repo"
+secondary = ["s3-backup"]
+
+  [[storage.backend]]
+  name = "local-repo"
+  kind = "local-fs"
+  path = "~/Sync/config-sync"
+
+  [[storage.backend]]
+  name = "s3-backup"
+  kind = "s3"
+  bucket = "my-config-sync"
+  region = "us-east-1"
+  prefix = "config-sync/"
