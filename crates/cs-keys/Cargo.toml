@@ -7,3 +7,12 @@ license.workspace = true
 [dependencies]
 thiserror = { workspace = true }
 cs-crypto = { path = "../cs-crypto" }
+base64 = "0.22"
+
+[features]
+default = []
+keyring = ["dep:keyring"]
+
+[dependencies.keyring]
+version = "3"
+optional = true
