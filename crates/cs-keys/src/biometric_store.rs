@@ -119,7 +119,6 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::SecretStore;
 
     #[test]
     fn is_biometric_gated_matches_platform() {
@@ -143,6 +142,7 @@ mod tests {
     #[ignore]
     #[test]
     fn live_macos_biometric_round_trip_prompts() {
+        use crate::SecretStore;
         let s = BiometricStore::new("config-sync-biometric-live-test");
         let acct = "biometric-test-account";
         let _ = s.delete(acct); // clean slate
