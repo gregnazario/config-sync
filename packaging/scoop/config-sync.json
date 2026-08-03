@@ -1,0 +1,21 @@
+{
+    "version": "0.1.0",
+    "description": "Sync config files across machines with post-quantum E2E encryption",
+    "homepage": "https://github.com/gregnazario/config-sync",
+    "license": "MIT OR Apache-2.0",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/gregnazario/config-sync/releases/download/v0.1.0/config-sync-x86_64-pc-windows-msvc-v0.1.0.zip",
+            "hash": "PLACEHOLDER_SHA256"
+        }
+    },
+    "bin": "config-sync.exe",
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/gregnazario/config-sync/releases/download/v$version/config-sync-x86_64-pc-windows-msvc-v$version.zip"
+            }
+        }
+    }
+}

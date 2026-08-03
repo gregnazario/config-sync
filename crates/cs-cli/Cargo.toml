@@ -3,6 +3,12 @@ name = "cs-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Sync config files across machines with post-quantum E2E encryption"
+repository = "https://github.com/gregnazario/config-sync"
+homepage = "https://github.com/gregnazario/config-sync"
+readme = "../../README.md"
+keywords = ["config", "sync", "encryption", "post-quantum", "backup"]
+categories = ["command-line-utilities", "cryptography"]
 
 [[bin]]
 name = "config-sync"
@@ -39,4 +45,29 @@ tokio = { version = "1", features = ["rt", "macros", "fs"] }
 
 [dev-dependencies]
 tempfile = "3"
+
+# ---- cargo-binstall: prebuilt binary download ----
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/config-sync-{ target }-{ version }.tar.gz"
+bin-dir = "config-sync-{ target }-{ version }/config-sync{ binary-ext }"
+pkg-fmt = "tgz"
+
+# ---- cargo-deb: Debian/Ubuntu .deb package ----
+[package.metadata.deb]
+maintainer = "Greg Nazario <greg@gregnazario.com>"
+depends = "libdbus-1-3"
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/config-sync", "usr/bin/", "755"],
+]
+
+# ---- cargo-generate-rpm: Fedora/RHEL .rpm package ----
+[package.metadata.generate-rpm]
+release = "1"
+assets = [
+    { source = "target/release/config-sync", dest = "/usr/bin/config-sync", mode = "755" },
+]
+[package.metadata.generate-rpm.requires]
+dbus-libs = "*"
 tokio = { version = "1", features = ["macros", "rt"] }

@@ -1,7 +1,6 @@
 # Rust build artifacts
 /target
 **/target/
-Cargo.lock
 
 # IDE / editor
 .idea/
@@ -12,3 +11,4 @@ Cargo.lock
 # Local test artifacts
 /test-tmp/
 *.swp
+.zcode/

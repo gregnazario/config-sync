@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chocolatey package for config-sync
+  Publish: choco push config-sync.0.1.0.nupkg --source https://push.chocolatey.org/
+  Install: choco install config-sync
+-->
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>config-sync</id>
+    <version>0.1.0</version>
+    <title>config-sync</title>
+    <authors>Greg Nazario</authors>
+    <projectUrl>https://github.com/gregnazario/config-sync</projectUrl>
+    <licenseUrl>https://github.com/gregnazario/config-sync/blob/main/LICENSE-MIT</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Sync config files across machines with post-quantum E2E encryption</description>
+    <tags>config sync encryption post-quantum backup dotfiles cli</tags>
+  </metadata>
+  <files>
+    <file src="tools/**" target="tools"/>
+  </files>
+</package>

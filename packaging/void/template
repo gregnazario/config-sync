@@ -1,0 +1,22 @@
+# Void Linux xbps-src template for config-sync
+# Place in void-packages/srcpkgs/config-sync/template
+# Build: cd void-packages && ./xbps-src pkg config-sync
+# Install: xbps-install config-sync (from local repo) or xi config-sync
+pkgname=config-sync
+version=0.1.0
+revision=1
+build_style=cargo
+hostmakedepends="cargo cmake pkg-config"
+makedepends="dbus-devel clang-devel cmake"
+depends="dbus-libs"
+short_desc="Sync config files across machines with post-quantum E2E encryption"
+maintainer="Greg Nazario <greg@gregnazario.com>"
+license="MIT OR Apache-2.0"
+homepage="https://github.com/gregnazario/config-sync"
+distfiles="https://github.com/gregnazario/config-sync/archive/v${version}.tar.gz"
+checksum=PLACEHOLDER_SHA256
+
+post_install() {
+    vlicense LICENSE-MIT
+    vlicense LICENSE-APACHE
+}

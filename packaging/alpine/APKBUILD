@@ -1,0 +1,29 @@
+# APKBUILD for config-sync on Alpine Linux
+# Build: abuild -r
+# Install: apk add --allow-untrusted config-sync-0.1.0.apk
+# Or submit to the Alpine community repository.
+pkgname=config-sync
+pkgver=0.1.0
+pkgrel=0
+pkgdesc="Sync config files across machines with post-quantum E2E encryption"
+url="https://github.com/gregnazario/config-sync"
+arch="x86_64 aarch64"
+license="MIT OR Apache-2.0"
+depends="dbus-libs"
+makedepends="cargo cmake dbus-dev clang-dev pkgconf"
+subpackages="$pkgname-doc"
+source="$pkgname-$pkgver.tar.gz::https://github.com/gregnazario/config-sync/archive/v$pkgver.tar.gz"
+options="!check"  # tests need a Secret Service session
+
+build() {
+    cargo build --release --locked
+}
+
+package() {
+    install -Dm755 target/release/config-sync "$pkgdir"/usr/bin/config-sync
+    install -Dm644 LICENSE-MIT "$pkgdir"/usr/share/licenses/$pkgname/LICENSE-MIT
+    install -Dm644 LICENSE-APACHE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE-APACHE
+    install -Dm644 README.md "$pkgdir"/usr/share/doc/$pkgname/README.md
+}
+
+sha512sums="PLACEHOLDER_SHA512"

@@ -1,0 +1,36 @@
+# WinGet singleton manifest for config-sync
+# Submit: wingetcreate submit https://github.com/gregnazario/config-sync
+# Install: winget install gregnazario.config-sync
+PackageIdentifier: gregnazario.config-sync
+PackageVersion: 0.1.0
+DefaultLocale: en-US
+ManifestType: singleton
+ManifestVersion: 1.6.0
+Publisher: Greg Nazario
+PublisherUrl: https://github.com/gregnazario
+PackageName: config-sync
+PackageUrl: https://github.com/gregnazario/config-sync
+License: MIT OR Apache-2.0
+LicenseUrl: https://github.com/gregnazario/config-sync/blob/main/LICENSE-MIT
+ShortDescription: Sync config files across machines with post-quantum E2E encryption
+Description: |
+  config-sync encrypts your dotfiles and configs with hybrid ML-KEM-768 + X25519
+  key encapsulation and XChaCha20-Poly1305 AEAD, then syncs the ciphertext to
+  your choice of cloud storage.
+Tags:
+  - config
+  - sync
+  - encryption
+  - post-quantum
+  - backup
+  - dotfiles
+  - cli
+Installers:
+  - Architecture: x64
+    InstallerType: zip
+    InstallerUrl: https://github.com/gregnazario/config-sync/releases/download/v0.1.0/config-sync-x86_64-pc-windows-msvc-v0.1.0.zip
+    InstallerSha256: PLACEHOLDER_SHA256
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: config-sync.exe
+        PortableCommandAlias: config-sync

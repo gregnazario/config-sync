@@ -1,0 +1,16 @@
+# mise configuration for config-sync
+#
+# Install globally:
+#   mise use -g ubi:gregnazario/config-sync
+#
+# Or pin a version:
+#   mise use -g ubi:gregnazario/config-sync@0.1.0
+#
+# Or use this file in your project:
+#   cp mise.toml ~/.config/mise/config.toml
+#
+# mise's built-in ubi backend downloads the right prebuilt binary from
+# GitHub Releases automatically — no registry entry needed.
+
+[tools.config-sync.ubi]
+repo = "gregnazario/config-sync"

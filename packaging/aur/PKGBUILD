@@ -1,0 +1,24 @@
+# AUR PKGBUILD for config-sync (prebuilt binary)
+# Submit: makepkg --printsrcinfo > .SRCINFO, then push to AUR as config-sync-bin
+# Install: yay -S config-sync-bin (or paru -S config-sync-bin)
+pkgname=config-sync-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Sync config files across machines with post-quantum E2E encryption"
+arch=('x86_64' 'aarch64')
+url="https://github.com/gregnazario/config-sync"
+license=('MIT' 'Apache-2.0')
+depends=('dbus')
+conflicts=('config-sync' 'config-sync-git')
+provides=('config-sync')
+
+source_x86_64=("https://github.com/gregnazario/config-sync/releases/download/v${pkgver}/config-sync-x86_64-unknown-linux-gnu-v${pkgver}.tar.gz")
+sha256sums_x86_64=('PLACEHOLDER_X86_SHA256')
+
+source_aarch64=("https://github.com/gregnazario/config-sync/releases/download/v${pkgver}/config-sync-aarch64-unknown-linux-gnu-v${pkgver}.tar.gz")
+sha256sums_aarch64=('PLACEHOLDER_ARM_SHA256')
+
+package() {
+    install -Dm755 "${srcdir}/config-sync" "${pkgdir}/usr/bin/config-sync"
+    install -Dm644 "${srcdir}/LICENSE-MIT" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE-MIT"
+}
