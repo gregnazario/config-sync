@@ -5,6 +5,12 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+default = []
+# When enabled, cs-storage is built with its "s3" feature and the gated
+# s3_backend conformance test is compiled. Live tests still need env config.
+s3 = ["cs-storage/s3", "dep:aws-sdk-s3"]
+
 [dependencies]
 cs-crypto = { path = "../cs-crypto" }
 cs-keys = { path = "../cs-keys" }
@@ -15,3 +21,7 @@ cs-sync = { path = "../cs-sync" }
 tokio = { version = "1", features = ["macros", "rt"] }
 bytes = { workspace = true }
 tempfile = "3"
+
+[dependencies.aws-sdk-s3]
+version = "1"
+optional = true

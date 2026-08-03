@@ -3,9 +3,13 @@
 #![forbid(unsafe_code)]
 
 mod error;
+mod memory;
 
 #[cfg(feature = "local-fs")]
 mod local_fs;
+
+#[cfg(feature = "s3")]
+mod s3;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -48,8 +52,13 @@ pub trait RemoteStore: Send + Sync {
     fn capabilities(&self) -> Capabilities;
 }
 
+pub use memory::MemoryStore;
+
 #[cfg(feature = "local-fs")]
 pub use local_fs::LocalFs;
+
+#[cfg(feature = "s3")]
+pub use s3::S3Store;
 
 #[cfg(test)]
 mod trait_tests {
