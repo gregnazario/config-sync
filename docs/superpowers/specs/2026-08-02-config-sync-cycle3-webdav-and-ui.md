@@ -61,7 +61,7 @@ Verification:
 | Configs versioned, stored versioned | ✅ (cycle 2) |
 | Keychain + biometrics | ⚠️ keychain wired; biometric ACL gating still pending |
 | Cross-platform (Mac/Win/Linux/FreeBSD) | ⚠️ macOS build+test verified; others `cargo check` for pure-Rust crates; liboqs needs native C toolchain |
-| CLI/invocable surface | ❌ no binary yet — the system is a library |
+| CLI/invocable surface | ✅ `cs-cli` binary: init / add / list / sync / recover / doctor |
 
 ## 4. Google Drive backend (`cs-storage`, feature `gdrive`)
 
