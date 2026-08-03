@@ -9,3 +9,8 @@ thiserror = { workspace = true }
 zeroize = { workspace = true }
 serde = { workspace = true }
 getrandom = "0.3"
+pqcrypto-mlkem = "0.1"
+pqcrypto-traits = "0.3"
+x25519-dalek = { version = "2", features = ["static_secrets", "getrandom"] }
+hkdf = "0.12"
+sha2 = "0.10"
