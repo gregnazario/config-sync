@@ -3,10 +3,11 @@
 //!
 //! These tests run only **without** the `keyring-store` feature, so the device
 //! identity is stored in an isolated file under the temp config dir (the OS
-//! keychain would prompt and isn't test-friendly). Run with:
+//! keychain would prompt and isn't test-friendly), and only on Unix (the
+//! shared-store test uses symlinks). Run with:
 //!   `cargo test -p cs-cli --no-default-features`
 
-#![cfg(not(feature = "keyring-store"))]
+#![cfg(all(not(feature = "keyring-store"), unix))]
 
 use clap::Parser;
 use cs_cli::Cli;
