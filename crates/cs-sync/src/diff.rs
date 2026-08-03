@@ -103,6 +103,7 @@ mod tests {
         c.bump(&DeviceId::new(dev));
         Entry {
             blob_id: Sha256::of(blob),
+            content_hash: Sha256::of(blob),
             aad_version: 1,
             clock: c,
             size: blob.len() as u64,
@@ -157,6 +158,7 @@ mod tests {
             ConfigPath::new("p"),
             Entry {
                 blob_id: Sha256::of(b"v1"),
+                content_hash: Sha256::of(b"v1"),
                 aad_version: 1,
                 clock: c1,
                 size: 2,
@@ -168,6 +170,7 @@ mod tests {
             ConfigPath::new("p"),
             Entry {
                 blob_id: Sha256::of(b"v2"),
+                content_hash: Sha256::of(b"v2"),
                 aad_version: 1,
                 clock: c2,
                 size: 2,
@@ -193,6 +196,7 @@ mod tests {
             ConfigPath::new("p"),
             Entry {
                 blob_id: Sha256::of(b"v2"),
+                content_hash: Sha256::of(b"v2"),
                 aad_version: 1,
                 clock: c2,
                 size: 2,
@@ -204,6 +208,7 @@ mod tests {
             ConfigPath::new("p"),
             Entry {
                 blob_id: Sha256::of(b"v1"),
+                content_hash: Sha256::of(b"v1"),
                 aad_version: 1,
                 clock: c1,
                 size: 2,
@@ -229,6 +234,7 @@ mod tests {
             ConfigPath::new("p"),
             Entry {
                 blob_id: Sha256::of(b"l"),
+                content_hash: Sha256::of(b"l"),
                 aad_version: 1,
                 clock: cl,
                 size: 1,
@@ -240,6 +246,7 @@ mod tests {
             ConfigPath::new("p"),
             Entry {
                 blob_id: Sha256::of(b"r"),
+                content_hash: Sha256::of(b"r"),
                 aad_version: 1,
                 clock: cr,
                 size: 1,
@@ -262,6 +269,7 @@ mod tests {
             ConfigPath::new("p"),
             Entry {
                 blob_id: Sha256::of(b"v1"),
+                content_hash: Sha256::of(b"v1"),
                 aad_version: 1,
                 clock: c1,
                 size: 2,

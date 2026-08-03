@@ -34,8 +34,10 @@ pub fn read_and_seal(
     };
     let out = seal(&plaintext, &aad, recip)?;
     let header_id = Sha256::of(&out.header);
+    let content_hash = Sha256::of(&plaintext);
     let entry = Entry {
         blob_id: header_id.clone(),
+        content_hash,
         aad_version,
         clock,
         size,

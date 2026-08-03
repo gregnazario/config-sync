@@ -10,6 +10,8 @@ cs-crypto = { path = "../cs-crypto" }
 cs-keys = { path = "../cs-keys" }
 cs-storage = { path = "../cs-storage" }
 cs-config = { path = "../cs-config" }
+cs-manifest = { path = "../cs-manifest" }
+cs-sync = { path = "../cs-sync" }
 tokio = { version = "1", features = ["macros", "rt"] }
 bytes = { workspace = true }
 tempfile = "3"

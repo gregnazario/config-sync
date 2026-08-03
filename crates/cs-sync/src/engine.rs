@@ -256,8 +256,14 @@ fn scan_local(
         let on_disk = std::fs::read(&mf.disk_path).ok();
         let existing = local.entries.get(&mf.logical).cloned();
         match (on_disk, existing) {
-            (Some(_plain), Some(prev)) => {
-                // Re-seal to compute a fresh content id; if it equals prev, skip.
+            (Some(plain), Some(prev)) => {
+                // Detect real content change via the plaintext hash; sealing is
+                // randomized so the ciphertext blob id is not a stable fingerprint.
+                let disk_hash = cs_manifest::Sha256::of(&plain);
+                if disk_hash == prev.content_hash && !prev.deleted {
+                    // Content unchanged; keep prev (don't re-seal or bump).
+                    continue;
+                }
                 let mut clk = prev.clock.clone();
                 clk.bump(inputs.device);
                 let (entry, sf) = read_and_seal(
@@ -267,10 +273,6 @@ fn scan_local(
                     clk,
                     inputs.recip_keys,
                 )?;
-                if entry.blob_id == prev.blob_id && !prev.deleted {
-                    // Content unchanged; keep prev (don't bump version needlessly).
-                    continue;
-                }
                 local.entries.insert(mf.logical.clone(), entry.clone());
                 staged.push(PendingPush {
                     path: mf.logical.clone(),

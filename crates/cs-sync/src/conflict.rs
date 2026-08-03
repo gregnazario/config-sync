@@ -131,6 +131,7 @@ mod tests {
         c.bump(&DeviceId::new(dev));
         Entry {
             blob_id: Sha256::of(blob),
+            content_hash: Sha256::of(blob),
             aad_version: 1,
             clock: c,
             size: blob.len() as u64,

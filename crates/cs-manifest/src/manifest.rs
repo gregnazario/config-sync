@@ -63,6 +63,7 @@ mod tests {
             ConfigPath::new("vim/.vimrc"),
             Entry {
                 blob_id: Sha256::of(b"x"),
+                content_hash: Sha256::of(b"x"),
                 aad_version: 1,
                 clock: m.clock.clone(),
                 size: 1,
@@ -97,6 +98,7 @@ mod tests {
             ConfigPath::new("z"),
             Entry {
                 blob_id: Sha256::of(b"z"),
+                content_hash: Sha256::of(b"z"),
                 aad_version: 1,
                 clock: VectorClock::new(),
                 size: 1,
@@ -108,6 +110,7 @@ mod tests {
             ConfigPath::new("a"),
             Entry {
                 blob_id: Sha256::of(b"a"),
+                content_hash: Sha256::of(b"a"),
                 aad_version: 1,
                 clock: VectorClock::new(),
                 size: 1,

@@ -10,6 +10,10 @@ pub struct Entry {
     /// Content-addressed id of the blob holding the envelope header
     /// (`blobs/<hex>`); the matching body lives at `blobs/<hex>.body`.
     pub blob_id: Sha256,
+    /// Hash of the *plaintext* — used to detect real content changes without
+    /// re-sealing on every sync (sealing is randomized, so the ciphertext
+    /// blob id is not a stable content fingerprint).
+    pub content_hash: Sha256,
     /// Version bound into the AEAD AAD; bumped on each content change.
     pub aad_version: u64,
     /// Per-path causal clock used by the diff/conflict logic.
