@@ -54,18 +54,35 @@ Verification:
 |---|---|
 | Syncing config files across machines | ✅ (cycle 2) |
 | Post-quantum E2E encryption | ✅ (cycle 1) |
-| Multiple upload locations (S3, **WebDAV→iCloud/Nextcloud/…**) | ✅ S3 + WebDAV (covers iCloud/Nextcloud/ownCloud/Synology/box); Proton Drive & Google Drive still additive |
+| Multiple upload locations (S3, **WebDAV→iCloud/Nextcloud/…**, **Google Drive**) | ✅ S3 + WebDAV (covers iCloud/Nextcloud/ownCloud/Synology/box) + Google Drive; Proton Drive still additive |
 | Key backup & recovery | ✅ (cycle 1) |
 | TOML config, per-machine paths, empty fields, conflict policy | ✅ (cycle 1) |
-| Interactive conflict resolution system | ✅ (this cycle) |
+| Interactive conflict resolution system | ✅ (cycle 3) |
 | Configs versioned, stored versioned | ✅ (cycle 2) |
 | Keychain + biometrics | ⚠️ keychain wired; biometric ACL gating still pending |
 | Cross-platform (Mac/Win/Linux/FreeBSD) | ⚠️ macOS build+test verified; others `cargo check` for pure-Rust crates; liboqs needs native C toolchain |
 
-## 4. Still open
+## 4. Google Drive backend (`cs-storage`, feature `gdrive`)
 
-- Proton Drive and Google Drive native backends (the trait makes each
-  additive; WebDAV already covers iCloud and others).
+Added after the WebDAV backend. Google Drive's REST API is neither path-based
+nor ETag-conditional-write-based, so the backend stores every object as a file
+inside a single Drive folder and keeps a JSON index (`_cs_index.json`) mapping
+each logical name to its Drive file id. The index is the single coordination
+object: every mutation loads it, applies, writes it back, and `if_match` is
+checked against the index's monotonic `version` — mirroring how the sync engine
+treats the manifest as the one mutable object. Auth is a bearer token injected
+into the reqwest client (OAuth handled out of band).
+
+Verified end-to-end against an in-process mock of the Drive REST API (`files?q=`,
+multipart create, media replace, `alt=media` download with Range, DELETE):
+put/get/list/delete round-trip, conditional put detects concurrent writes,
+range get returns the correct subset. Pure unit tests cover url-encoding and
+index JSON round-trip.
+
+## 5. Still open
+
+- Proton Drive native backend (the trait makes it additive; S3 + WebDAV +
+  Google Drive + local-fs already cover the rest of the named providers).
 - Biometric ACL flag wiring on keychain item creation.
 - A CLI binary so a user can invoke the tool directly.
 - Native CI runners for Windows/Linux/FreeBSD full builds.

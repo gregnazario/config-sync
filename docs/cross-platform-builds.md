@@ -19,6 +19,7 @@ succeeds on each platform.
 | `cs-crypto` | ✅ host + tests | ⛔ liboqs | ⛔ liboqs | ⛔ liboqs |
 | `cs-storage` (`--features s3`) | (native build) | (native build) | (native build) | (native build) |
 | `cs-storage` (`--features webdav`) reqwest+rustls | (native build) | (native build) | (native build) | (native build) |
+| `cs-storage` (`--features gdrive`) reqwest+rustls+serde | (native build) | (native build) | (native build) | (native build) |
 
 > **Cycle 2 additions:** `cs-manifest` is pure Rust (serde/postcard/sha2) and
 > type-checks on all four platforms. `cs-sync`'s logic is pure Rust; its only
