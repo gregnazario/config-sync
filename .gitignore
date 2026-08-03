@@ -1,0 +1,14 @@
+# Rust build artifacts
+/target
+**/target/
+Cargo.lock
+
+# IDE / editor
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Local test artifacts
+/test-tmp/
+*.swp
