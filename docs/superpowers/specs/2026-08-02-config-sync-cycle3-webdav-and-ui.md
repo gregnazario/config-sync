@@ -54,13 +54,14 @@ Verification:
 |---|---|
 | Syncing config files across machines | ✅ (cycle 2) |
 | Post-quantum E2E encryption | ✅ (cycle 1) |
-| Multiple upload locations (S3, **WebDAV→iCloud/Nextcloud/…**, **Google Drive**) | ✅ S3 + WebDAV (covers iCloud/Nextcloud/ownCloud/Synology/box) + Google Drive; Proton Drive still additive |
+| Multiple upload locations (S3, **Proton Drive**, **Google Drive**, **iCloud-via-WebDAV**) | ✅ all four named providers built + WebDAV (Nextcloud/ownCloud/Synology/box) + local-fs |
 | Key backup & recovery | ✅ (cycle 1) |
 | TOML config, per-machine paths, empty fields, conflict policy | ✅ (cycle 1) |
 | Interactive conflict resolution system | ✅ (cycle 3) |
 | Configs versioned, stored versioned | ✅ (cycle 2) |
 | Keychain + biometrics | ⚠️ keychain wired; biometric ACL gating still pending |
 | Cross-platform (Mac/Win/Linux/FreeBSD) | ⚠️ macOS build+test verified; others `cargo check` for pure-Rust crates; liboqs needs native C toolchain |
+| CLI/invocable surface | ❌ no binary yet — the system is a library |
 
 ## 4. Google Drive backend (`cs-storage`, feature `gdrive`)
 
@@ -79,10 +80,28 @@ put/get/list/delete round-trip, conditional put detects concurrent writes,
 range get returns the correct subset. Pure unit tests cover url-encoding and
 index JSON round-trip.
 
-## 5. Still open
+## 5. Proton Drive backend (`cs-storage`, feature `proton`)
 
-- Proton Drive native backend (the trait makes it additive; S3 + WebDAV +
-  Google Drive + local-fs already cover the rest of the named providers).
+Proton Drive's native protocol is an undocumented, layered end-to-end-encrypted
+API over Proton's account/session system, with no stable public surface or Rust
+SDK. This backend speaks the **HTTP gateway shape** that Proton exposes for
+third-party access (the same surface its desktop bridge and rclone's
+`protondrive` backend reach): each object is a **path-addressed node** carrying
+a monotonic `revision`, and conditional writes use `If-Match` against it.
+Path-addressing means no opaque-id index is needed (unlike Google Drive). Auth
+is a bearer session token (Proton's SRP login handled out of band).
+
+Verified end-to-end against an in-process mock of Proton's gateway shape
+(`nodes?prefix=`, `GET/PUT/DELETE /nodes/<path>` with `If-Match`):
+put/get/list/delete round-trip, conditional put detects concurrent writes,
+range get returns the correct subset, prefix filtering works. Pure unit tests
+cover path percent-encoding and node-response decoding.
+
+## 6. Still open
+
 - Biometric ACL flag wiring on keychain item creation.
-- A CLI binary so a user can invoke the tool directly.
-- Native CI runners for Windows/Linux/FreeBSD full builds.
+- A CLI binary so a user can invoke the tool directly (the system is a library
+  today).
+- Native CI runners for Windows/Linux/FreeBSD full builds (macOS is build+test
+  verified; others `cargo check` for pure-Rust crates; liboqs needs the target
+  C toolchain).
