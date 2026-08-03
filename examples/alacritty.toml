@@ -1,0 +1,29 @@
+# Alacritty terminal config sync
+# Manages: alacritty.toml (the new TOML format; pre-0.13 used YAML)
+# Recommended policy: latest-wins (terminal config is usually identical)
+[[config]]
+name = "alacritty"
+conflict_policy = "latest-wins"
+
+  # Linux / FreeBSD (XDG)
+  [[config.location]]
+  host = ""
+  platform = "linux"
+  path = "~/.config/alacritty/alacritty.toml"
+
+  [[config.location]]
+  host = ""
+  platform = "freebsd"
+  path = "~/.config/alacritty/alacritty.toml"
+
+  # macOS
+  [[config.location]]
+  host = ""
+  platform = "mac"
+  path = "~/Library/Application Support/alacritty/alacritty.toml"
+
+  # Windows
+  [[config.location]]
+  host = ""
+  platform = "windows"
+  path = "%APPDATA%/alacritty/alacritty.toml"

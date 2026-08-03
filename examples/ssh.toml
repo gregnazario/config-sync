@@ -1,0 +1,16 @@
+# SSH config sync
+# Manages: ~/.ssh/config (host aliases, proxy jumps, etc.)
+# Does NOT sync private keys, known_hosts, or authorized_keys.
+# Recommended policy: manual (SSH config may have machine-specific host
+# entries, jump hosts, and identity settings — review each change)
+[[config]]
+name = "ssh"
+conflict_policy = "manual"
+
+  [[config.location]]
+  host = ""
+  platform = ""
+  path = "~/.ssh/config"
+
+  # Never sync keys or known_hosts
+  ignore = ["id_*", "*.pub", "known_hosts", "authorized_keys"]

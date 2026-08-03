@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=config-sync
+Comment=Sync config files with post-quantum E2E encryption
+Exec=config-sync
+Terminal=true
+Type=Application
+Categories=Utility;System;

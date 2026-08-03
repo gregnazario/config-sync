@@ -1,0 +1,11 @@
+# GNU Screen config sync
+# Manages: ~/.screenrc
+# Recommended policy: latest-wins (screenrc is simple and rarely conflicts)
+[[config]]
+name = "screen"
+conflict_policy = "latest-wins"
+
+  [[config.location]]
+  host = ""
+  platform = ""
+  path = "~/.screenrc"

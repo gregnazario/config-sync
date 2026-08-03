@@ -1,0 +1,29 @@
+# tmux config sync
+# Manages: ~/.tmux.conf (and the newer ~/.config/tmux/tmux.conf)
+# Recommended policy: latest-wins (tmux configs rarely conflict semantically)
+[[config]]
+name = "tmux"
+conflict_policy = "latest-wins"
+
+  # Classic location (~/.tmux.conf) — works on all Unix platforms
+  [[config.location]]
+  host = ""
+  platform = ""
+  path = "~/.tmux.conf"
+
+  # Modern XDG location (tmux 3.1+)
+  [[config.location]]
+  host = ""
+  platform = "linux"
+  path = "~/.config/tmux/tmux.conf"
+
+  [[config.location]]
+  host = ""
+  platform = "mac"
+  path = "~/.config/tmux/tmux.conf"
+
+  # Windows (WSL tmux / Windows Terminal tmux)
+  [[config.location]]
+  host = ""
+  platform = "windows"
+  path = "~/.tmux.conf"

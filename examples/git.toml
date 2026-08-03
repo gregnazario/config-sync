@@ -1,0 +1,17 @@
+# Git config sync
+# Manages: ~/.gitconfig (global git settings, not credentials)
+# Recommended policy: latest-wins (git config is straightforward)
+[[config]]
+name = "git"
+conflict_policy = "latest-wins"
+
+  [[config.location]]
+  host = ""
+  platform = ""
+  path = "~/.gitconfig"
+
+  # Windows: %USERPROFILE%\.gitconfig
+  [[config.location]]
+  host = ""
+  platform = "windows"
+  path = "%USERPROFILE%/.gitconfig"

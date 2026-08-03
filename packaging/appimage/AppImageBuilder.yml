@@ -1,0 +1,30 @@
+# AppImage recipe for config-sync (via appimage-builder)
+# Build: appimage-builder --recipe AppImageBuilder.yml
+# Result: config-sync-x86_64.AppImage (portable single-file binary)
+# Note: AppImage is designed for GUI apps; a CLI tool works but the .desktop
+# and icon requirements add overhead. Included for single-file portability.
+
+version: 1
+
+AppDir:
+  path: ./AppDir
+
+  app_info:
+    id: io.github.gregnazario.config-sync
+    name: config-sync
+    icon: utilities-terminal
+    version: 0.1.0
+    exec: usr/bin/config-sync
+    exec_args: $@
+
+  after_bundle:
+    - mkdir -p AppDir/usr/bin
+    - cp config-sync AppDir/usr/bin/config-sync
+    - cp packaging/appimage/config-sync.desktop AppDir/
+
+AppImage:
+  arch: x86_64
+  update_information: None
+  # GitHub Releases URL for the prebuilt binary
+  source:
+    url: https://github.com/gregnazario/config-sync/releases/download/v0.1.0/config-sync-x86_64-unknown-linux-gnu-v0.1.0.tar.gz

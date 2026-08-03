@@ -1,0 +1,24 @@
+# Syncthing config sync
+# Manages: config.xml (the GUI/listen settings, NOT the cert/keys)
+# Recommended policy: manual (syncthing config has machine-specific IDs)
+[[config]]
+name = "syncthing"
+conflict_policy = "manual"
+
+  # Linux (XDG config home)
+  [[config.location]]
+  host = ""
+  platform = "linux"
+  path = "~/.config/syncthing/config.xml"
+
+  # macOS
+  [[config.location]]
+  host = ""
+  platform = "mac"
+  path = "~/Library/Application Support/Syncthing/config.xml"
+
+  # Windows
+  [[config.location]]
+  host = ""
+  platform = "windows"
+  path = "%LOCALAPPDATA%/Syncthing/config.xml"

@@ -1,0 +1,39 @@
+# Neovim config sync
+# Manages: init.lua, init.vim, and the nvim config directory
+# Recommended policy: prompt (you usually want to review editor config changes)
+[[config]]
+name = "nvim"
+conflict_policy = "prompt"
+ignore = ["*.swp", "*.tmp", "undo/", "*.bak"]
+
+  # Modern nvim (init.lua)
+  [[config.location]]
+  host = ""
+  platform = "linux"
+  path = "~/.config/nvim/init.lua"
+
+  [[config.location]]
+  host = ""
+  platform = "mac"
+  path = "~/.config/nvim/init.lua"
+
+  [[config.location]]
+  host = ""
+  platform = "windows"
+  path = "~/AppData/Local/nvim/init.lua"
+
+  # Legacy nvim (init.vim)
+  [[config.location]]
+  host = ""
+  platform = "linux"
+  path = "~/.config/nvim/init.vim"
+
+  [[config.location]]
+  host = ""
+  platform = "mac"
+  path = "~/.config/nvim/init.vim"
+
+  [[config.location]]
+  host = ""
+  platform = "windows"
+  path = "~/AppData/Local/nvim/init.vim"

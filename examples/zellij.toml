@@ -1,0 +1,32 @@
+# Zellij config sync
+# Manages: config.kdl and layout files
+# Recommended policy: prompt (layout changes may be intentional per-machine)
+[[config]]
+name = "zellij"
+conflict_policy = "prompt"
+
+  [[config.location]]
+  host = ""
+  platform = "linux"
+  path = "~/.config/zellij/config.kdl"
+
+  [[config.location]]
+  host = ""
+  platform = "mac"
+  path = "~/.config/zellij/config.kdl"
+
+  [[config.location]]
+  host = ""
+  platform = "windows"
+  path = "~/AppData/Local/zellij/config.kdl"
+
+  # Layouts directory (KDL layouts shared across machines)
+  [[config.location]]
+  host = ""
+  platform = "linux"
+  path = "~/.config/zellij/layouts/default.kdl"
+
+  [[config.location]]
+  host = ""
+  platform = "mac"
+  path = "~/.config/zellij/layouts/default.kdl"

@@ -1,0 +1,28 @@
+# Starship prompt config sync
+# Manages: ~/.config/starship.toml
+# Recommended policy: latest-wins (a single config that rarely conflicts)
+[[config]]
+name = "starship"
+conflict_policy = "latest-wins"
+
+  # XDG config (Linux / macOS / FreeBSD)
+  [[config.location]]
+  host = ""
+  platform = "linux"
+  path = "~/.config/starship.toml"
+
+  [[config.location]]
+  host = ""
+  platform = "mac"
+  path = "~/.config/starship.toml"
+
+  [[config.location]]
+  host = ""
+  platform = "freebsd"
+  path = "~/.config/starship.toml"
+
+  # Windows
+  [[config.location]]
+  host = ""
+  platform = "windows"
+  path = "~/.config/starship.toml"

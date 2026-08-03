@@ -1,0 +1,31 @@
+# Shell config sync (zsh + bash)
+# Manages: .zshrc, .bashrc, .bash_profile
+# Recommended policy: prompt (shell configs often have machine-specific
+# PATH changes, aliases, and conditionals you want to review)
+[[config]]
+name = "zsh"
+conflict_policy = "prompt"
+
+  [[config.location]]
+  host = ""
+  platform = ""
+  path = "~/.zshrc"
+
+  # zsh history / completion can be large and machine-specific; ignore them
+  ignore = ["*.zwc", ".zsh_history"]
+
+[[config]]
+name = "bash"
+conflict_policy = "prompt"
+
+  [[config.location]]
+  host = ""
+  platform = ""
+  path = "~/.bashrc"
+
+  [[config.location]]
+  host = ""
+  platform = ""
+  path = "~/.bash_profile"
+
+  ignore = [".bash_history"]

@@ -1,0 +1,34 @@
+# Snap package for config-sync
+# Build: snapcraft (in an LXC container or Launchpad)
+# Install: sudo snap install config-sync --classic
+# Note: classic confinement gives full filesystem access (needed for
+# reading/writing dotfiles). Classic snaps require store review on first
+# publication to stable.
+
+name: config-sync
+base: core22
+version: '0.1.0'
+summary: Sync config files across machines with post-quantum E2E encryption
+description: |
+  config-sync encrypts your dotfiles and configs with hybrid ML-KEM-768 +
+  X25519 key encapsulation and XChaCha20-Poly1305 AEAD, then syncs the
+  ciphertext to your choice of cloud storage. Your cloud provider never
+  sees plaintext.
+
+grade: stable
+confinement: classic
+
+apps:
+  config-sync:
+    command: config-sync
+
+parts:
+  config-sync:
+    plugin: dump
+    source:
+      - type: file
+        url: https://github.com/gregnazario/config-sync/releases/download/v0.1.0/config-sync-x86_64-unknown-linux-gnu-v0.1.0.tar.gz
+    organize:
+      config-sync: config-sync
+    stage:
+      - config-sync

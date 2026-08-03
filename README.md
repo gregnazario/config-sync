@@ -39,15 +39,19 @@ cargo binstall config-sync
 | Any (Rust toolchain) | cargo-binstall | `cargo binstall config-sync` |
 | macOS / Linux | Homebrew | `brew tap gregnazario/config-sync && brew install config-sync` |
 | Debian / Ubuntu | apt (.deb) | `sudo dpkg -i config-sync_*_amd64.deb` |
-| Fedora / RHEL | dnf (.rpm) | `sudo dnf install config-sync-*.x86_64.rpm` |
+| Fedora / RHEL / openSUSE | dnf / zypper (.rpm) | `sudo dnf install config-sync-*.rpm` or `sudo zypper install config-sync-*.rpm` |
 | Alpine | apk | `apk add --allow-untrusted config-sync-*.apk` |
 | Void Linux | xbps | `xbps-install config-sync` |
 | Arch Linux | AUR | `yay -S config-sync-bin` |
+| Gentoo | Portage (ebuild) | `emerge config-sync-bin` |
 | Any (mise) | mise | `mise use -g ubi:gregnazario/config-sync` |
 | Windows | Chocolatey | `choco install config-sync` |
 | Windows | WinGet | `winget install gregnazario.config-sync` |
 | Windows | Scoop | `scoop install config-sync` |
 | NixOS | Nix | `nix run github:gregnazario/config-sync` |
+| Linux (portable) | Flatpak | `flatpak install config-sync` |
+| Linux (portable) | Snap | `sudo snap install config-sync --classic` |
+| Linux (portable) | AppImage | `chmod +x config-sync-*.AppImage && ./config-sync-*.AppImage` |
 
 ### Build from source
 
@@ -78,6 +82,25 @@ config-sync doctor
 
 See `docs/usage.md` for the full guide, and `docs/cloud-sync-folders.md` for
 configuring Proton Drive / iCloud / Dropbox folder sync.
+
+## Example configs
+
+Ready-to-use config snippets for popular tools are in `examples/`. Copy the
+ones you want into your `~/.config/config-sync/config.toml`, or use them as
+starting points:
+
+| Example | What it syncs | Policy |
+|---|---|---|
+| [`neovim.toml`](examples/neovim.toml) | init.lua / init.vim (Linux/macOS/Windows paths) | prompt |
+| [`tmux.toml`](examples/tmux.toml) | ~/.tmux.conf + XDG config | latest-wins |
+| [`zellij.toml`](examples/zellij.toml) | config.kdl + layouts | prompt |
+| [`syncthing.toml`](examples/syncthing.toml) | config.xml (settings, not keys) | manual |
+| [`git.toml`](examples/git.toml) | ~/.gitconfig | latest-wins |
+| [`shell.toml`](examples/shell.toml) | .zshrc + .bashrc + .bash_profile | prompt |
+| [`starship.toml`](examples/starship.toml) | starship.toml prompt config | latest-wins |
+| [`alacritty.toml`](examples/alacritty.toml) | alacritty.toml (terminal config) | latest-wins |
+| [`screen.toml`](examples/screen.toml) | ~/.screenrc | latest-wins |
+| [`ssh.toml`](examples/ssh.toml) | ~/.ssh/config (no private keys) | manual |
 
 ## Architecture
 
