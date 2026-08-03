@@ -17,6 +17,9 @@ mod webdav;
 #[cfg(feature = "gdrive")]
 mod gdrive;
 
+#[cfg(feature = "proton")]
+mod proton;
+
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::ops::Range;
@@ -71,6 +74,9 @@ pub use webdav::WebDavStore;
 
 #[cfg(feature = "gdrive")]
 pub use gdrive::GoogleDriveStore;
+
+#[cfg(feature = "proton")]
+pub use proton::ProtonDriveStore;
 
 #[cfg(test)]
 mod trait_tests {

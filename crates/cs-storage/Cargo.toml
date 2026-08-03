@@ -10,6 +10,7 @@ local-fs = []
 s3 = ["dep:aws-sdk-s3", "dep:aws-config"]
 webdav = ["dep:reqwest"]
 gdrive = ["dep:reqwest", "dep:serde", "dep:serde_json"]
+proton = ["dep:reqwest", "dep:serde", "dep:serde_json"]
 
 [dependencies]
 async-trait = "0.1"
