@@ -1,5 +1,13 @@
 //! Shamir k-of-n recovery: split the RIK into `n` shares, any `k` of which
 //! reconstruct it. Default is `k=2, n=3`.
+//!
+//! ⚠️ **SECURITY WARNING:** The current `seal()` implementation stores ALL `n`
+//! shares in a single `RecoveryBundle`. This defeats the threshold model —
+//! anyone with the bundle has all shares and can reconstruct the secret with
+//! zero gating. For real security, the shares MUST be distributed to independent
+//! holders/locations BEFORE storing the bundle. Do NOT store the bundle whole
+//! in a single location; split it and distribute each share separately.
+//! (A future API revision will emit per-share bundles.)
 
 use crate::error::KeysError;
 use crate::recovery::{RecoveryBundle, RecoveryKind, RecoveryProvider};

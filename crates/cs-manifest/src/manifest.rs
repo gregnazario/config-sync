@@ -33,8 +33,10 @@ impl Manifest {
         }
     }
 
-    /// Deterministic postcard encoding (BTreeMap iteration is sorted, so
-    /// structurally equal manifests encode to identical bytes).
+    /// Postcard encoding. Entry ordering is deterministic (BTreeMap), but
+    /// `SystemTime` fields mean byte-equality is NOT guaranteed for manifests
+    /// that differ only in wall-clock timestamps. Convergence relies on
+    /// `manifest_version` (monotonic), not byte-equality.
     pub fn to_bytes(&self) -> Result<Vec<u8>, crate::error::ManifestError> {
         postcard::to_allocvec(self).map_err(|e| crate::error::ManifestError::Decode(e.to_string()))
     }

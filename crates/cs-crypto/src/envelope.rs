@@ -66,7 +66,8 @@ pub fn seal(plaintext: &[u8], aad: &Aad, recip: &RecipientKeys) -> Result<SealOu
         classic_eph: ct.classic_eph,
         wrapped_dek,
     };
-    let mut header = Vec::with_capacity(64);
+    // ML-KEM-768 ct (~1088) + X25519 eph (32) + wrapped DEK (~72) + magic (7).
+    let mut header = Vec::with_capacity(1200);
     header.extend_from_slice(MAGIC);
     header.push(VERSION);
     let encoded = postcard::to_allocvec(&hb).map_err(|e| CryptoError::Encode(e.to_string()))?;

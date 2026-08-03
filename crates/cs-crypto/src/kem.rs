@@ -31,7 +31,8 @@ pub struct HybridKemCt {
     pub classic_eph: [u8; 32],
 }
 
-const KEM_INFO: &[u8] = b"csync/hybrid-v1";
+/// HKDF info string with explicit algorithm domain separation.
+const KEM_INFO: &[u8] = b"csync/hybrid-v1/mlkem768/x25519";
 
 /// Generate a fresh long-term recipient identity (PQ + classic keypair).
 pub fn generate_recipient_keypair() -> (RecipientKeys, RecipientSecrets) {

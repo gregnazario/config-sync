@@ -88,154 +88,157 @@ async fn sync_inner(
 ) -> Result<SyncReport, SyncError> {
     let mut report = SyncReport::default();
 
-    // Phase 0: scan local files into the manifest. A managed file that exists
-    // on disk but is absent from the manifest (or whose content has changed
-    // since the recorded entry) becomes a fresh local entry to push. A managed
-    // file absent from disk but present in the manifest becomes a tombstone.
-    let mut staged_pushes: Vec<PendingPush> = scan_local(local, inputs)?;
+    // Phase 0: scan local files into the manifest.
+    let staged_pushes: Vec<PendingPush> = scan_local(local, inputs)?;
 
-    for attempt in 0..MAX_CAS_RETRIES {
-        let remote = fetch_remote_manifest(store).await?;
-        let ops = diff(local, &remote);
+    // Upload all staged blobs ONCE (they're content-addressed and immutable;
+    // re-uploading on CAS retry is pure waste).
+    for p in &staged_pushes {
+        let id_hex = p.entry.blob_id.to_hex();
+        store
+            .put(&blob_key(&id_hex), Bytes::from(p.header_blob.clone()), None)
+            .await?;
+        store
+            .put(
+                &blob_body_key(&id_hex),
+                Bytes::from(p.body_blob.clone()),
+                None,
+            )
+            .await?;
+        local.entries.insert(p.path.clone(), p.entry.clone());
+    }
 
-        // Pending pushes discovered during conflict resolution this pass.
-        let mut pushes: Vec<PendingPush> = Vec::new();
-        let mut aborted = false;
+    // Build a quick lookup for managed files.
+    let file_map: std::collections::HashMap<&cs_manifest::ConfigPath, &ManagedFile> =
+        inputs.files.iter().map(|f| (&f.logical, f)).collect();
 
-        for op in ops {
-            match op {
-                DiffOp::PullLocal { path, remote } => {
-                    if let Some(mf) = inputs.files.iter().find(|f| f.logical == path) {
-                        let hdr = store.get(&blob_key(&remote.blob_id.to_hex())).await?;
-                        let body = store.get(&blob_body_key(&remote.blob_id.to_hex())).await?;
-                        let pt = open_sealed(&hdr, &body, &path, &remote, inputs.recip_secrets)?;
-                        write_plaintext(&mf.disk_path, &pt)?;
-                        local.entries.insert(path.clone(), remote.clone());
-                        report.pulled.push(path);
+    // Phase 1: pull remote changes and resolve conflicts (may run multiple
+    // times due to CAS retries on the manifest put).
+    let mut conflict_pushes: Vec<cs_manifest::ConfigPath> = Vec::new();
+    let mut aborted = false;
+
+    for op in &diff(local, &fetch_remote_manifest(store).await?) {
+        match op {
+            DiffOp::PullLocal { path, remote } => {
+                if let Some(mf) = file_map.get(path) {
+                    let id_hex = remote.blob_id.to_hex();
+                    let hdr = store.get(&blob_key(&id_hex)).await?;
+                    let body = store.get(&blob_body_key(&id_hex)).await?;
+                    let pt = open_sealed(&hdr, &body, path, remote, inputs.recip_secrets)?;
+                    write_plaintext(&mf.disk_path, &pt)?;
+                    local.entries.insert(path.clone(), remote.clone());
+                    report.pulled.push(path.clone());
+                }
+            }
+            DiffOp::PullDeletion { path, remote: _ } => {
+                if let Some(mf) = file_map.get(path) {
+                    let _ = std::fs::remove_file(&mf.disk_path);
+                }
+                local.entries.remove(path);
+            }
+            DiffOp::PushRemote { .. } | DiffOp::PushDeletion { .. } => {
+                // Already handled by scan_local staged_pushes above.
+            }
+            DiffOp::InSync { .. } => {}
+            DiffOp::Conflict {
+                path,
+                local: l,
+                remote: r,
+            } => {
+                let mf = file_map
+                    .get(path)
+                    .ok_or_else(|| SyncError::Manifest(format!("no managed file for {path}")))?;
+                let conflict = crate::conflict::Conflict {
+                    path: path.clone(),
+                    local: l.clone(),
+                    remote: r.clone(),
+                };
+                let res = resolve_conflict(
+                    &conflict,
+                    mf.policy,
+                    inputs.resolver,
+                    local.manifest_version + 1,
+                    inputs.now,
+                )?;
+                match res {
+                    Resolution::Aborted => {
+                        aborted = true;
+                        report.aborted = true;
+                        break;
                     }
-                }
-                DiffOp::PullDeletion { path, remote: _ } => {
-                    if let Some(mf) = inputs.files.iter().find(|f| f.logical == path) {
-                        let _ = std::fs::remove_file(&mf.disk_path);
-                    }
-                    local.entries.remove(&path);
-                }
-                DiffOp::PushRemote { path: _, local: _ } => {
-                    // Handled by staged_pushes from scan_local; nothing extra.
-                }
-                DiffOp::PushDeletion { path, local: _ } => {
-                    if let Some(mf) = inputs.files.iter().find(|f| f.logical == path) {
-                        let _ = std::fs::remove_file(&mf.disk_path);
-                    }
-                    local.entries.remove(&path);
-                }
-                DiffOp::InSync { path: _ } => {}
-                DiffOp::Conflict {
-                    path,
-                    local: l,
-                    remote: r,
-                } => {
-                    let mf = inputs
-                        .files
-                        .iter()
-                        .find(|f| f.logical == path)
-                        .ok_or_else(|| {
-                            SyncError::Manifest(format!("no managed file for {path}"))
-                        })?;
-                    let conflict = crate::conflict::Conflict {
-                        path: path.clone(),
-                        local: l.clone(),
-                        remote: r.clone(),
-                    };
-                    let res = resolve_conflict(
-                        &conflict,
-                        mf.policy,
-                        inputs.resolver,
-                        local.manifest_version + 1,
-                        inputs.now,
-                    )?;
-                    match res {
-                        Resolution::Aborted => {
-                            aborted = true;
-                            report.aborted = true;
-                            break;
+                    Resolution::Resolved { chosen, .. } => {
+                        if chosen.blob_id == r.blob_id {
+                            let id_hex = r.blob_id.to_hex();
+                            let hdr = store.get(&blob_key(&id_hex)).await?;
+                            let body = store.get(&blob_body_key(&id_hex)).await?;
+                            let pt = open_sealed(&hdr, &body, path, r, inputs.recip_secrets)?;
+                            write_plaintext(&mf.disk_path, &pt)?;
+                            local.entries.insert(path.clone(), r.clone());
+                            report.pulled.push(path.clone());
+                        } else {
+                            let mut clk = l.clock.clone();
+                            clk.merge(&r.clock);
+                            clk.bump(inputs.device);
+                            let (entry, sf) = read_and_seal(
+                                &mf.disk_path,
+                                path,
+                                l.aad_version + 1,
+                                clk,
+                                inputs.recip_keys,
+                            )?;
+                            // Upload conflict-push blobs immediately.
+                            let cid_hex = entry.blob_id.to_hex();
+                            store
+                                .put(&blob_key(&cid_hex), Bytes::from(sf.header_blob), None)
+                                .await?;
+                            store
+                                .put(&blob_body_key(&cid_hex), Bytes::from(sf.body_blob), None)
+                                .await?;
+                            local.entries.insert(path.clone(), entry);
+                            conflict_pushes.push(path.clone());
                         }
-                        Resolution::Resolved { chosen, .. } => {
-                            if chosen.blob_id == r.blob_id {
-                                let hdr = store.get(&blob_key(&r.blob_id.to_hex())).await?;
-                                let body = store.get(&blob_body_key(&r.blob_id.to_hex())).await?;
-                                let pt = open_sealed(&hdr, &body, &path, &r, inputs.recip_secrets)?;
-                                write_plaintext(&mf.disk_path, &pt)?;
-                                local.entries.insert(path.clone(), r.clone());
-                                report.pulled.push(path.clone());
-                            } else {
-                                let mut clk = l.clock.clone();
-                                clk.merge(&r.clock);
-                                clk.bump(inputs.device);
-                                let (entry, sf) = read_and_seal(
-                                    &mf.disk_path,
-                                    &path,
-                                    l.aad_version + 1,
-                                    clk,
-                                    inputs.recip_keys,
-                                )?;
-                                pushes.push(PendingPush {
-                                    path: path.clone(),
-                                    entry,
-                                    header_blob: sf.header_blob,
-                                    body_blob: sf.body_blob,
-                                });
-                            }
-                            report.conflicts_resolved.push(path);
-                        }
+                        report.conflicts_resolved.push(path.clone());
                     }
                 }
             }
         }
+    }
 
-        if aborted {
-            return Ok(report);
+    if aborted {
+        return Ok(report);
+    }
+
+    // Report pushed paths.
+    report
+        .pushed
+        .extend(staged_pushes.iter().map(|p| p.path.clone()));
+    report.pushed.extend(conflict_pushes);
+
+    // Phase 2: manifest CAS retry loop (only retries the manifest put,
+    // not blob uploads — blobs are already content-addressed on the store).
+    local.clock.bump(inputs.device);
+    local.manifest_version += 1;
+    local.device_id = inputs.device.as_str().to_string();
+
+    for attempt in 0..MAX_CAS_RETRIES {
+        // Re-fetch remote to detect concurrent changes before our put.
+        if attempt > 0 {
+            let remote = fetch_remote_manifest(store).await?;
+            // Merge any remote-only entries we missed.
+            for (path, entry) in &remote.entries {
+                if !local.entries.contains_key(path) {
+                    local.entries.insert(path.clone(), entry.clone());
+                }
+            }
         }
 
-        // Combine staged pushes (from scan_local) with conflict-driven pushes.
-        staged_pushes.extend(pushes);
-
-        // Upload blobs and merge staged entries into the manifest.
-        for p in &staged_pushes {
-            store
-                .put(
-                    &blob_key(&p.entry.blob_id.to_hex()),
-                    Bytes::from(p.header_blob.clone()),
-                    None,
-                )
-                .await?;
-            store
-                .put(
-                    &blob_body_key(&p.entry.blob_id.to_hex()),
-                    Bytes::from(p.body_blob.clone()),
-                    None,
-                )
-                .await?;
-            local.entries.insert(p.path.clone(), p.entry.clone());
-        }
-
-        // Bump aggregate clock + version, then conditionally-put the manifest.
-        local.clock.bump(inputs.device);
-        local.manifest_version += 1;
-        local.device_id = inputs.device.as_str().to_string();
         let bytes = local
             .to_bytes()
             .map_err(|e| SyncError::Manifest(e.to_string()))?;
 
         match store.put(MANIFEST_KEY, Bytes::from(bytes), None).await {
-            Ok(_etag) => {
-                report
-                    .pushed
-                    .extend(staged_pushes.into_iter().map(|p| p.path));
-                return Ok(report);
-            }
+            Ok(_etag) => return Ok(report),
             Err(cs_storage::StorageError::PreconditionFailed) if attempt + 1 < MAX_CAS_RETRIES => {
-                // Another device won the manifest race: re-fetch and re-diff.
                 continue;
             }
             Err(e) => return Err(e.into()),

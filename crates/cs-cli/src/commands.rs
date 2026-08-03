@@ -351,15 +351,22 @@ fn home_dir() -> String {
 }
 
 fn hostname() -> String {
+    // Read the hostname directly from the system instead of spawning a subprocess.
     #[cfg(unix)]
     {
-        std::process::Command::new("hostname")
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "unknown".to_string())
+        use std::sync::OnceLock;
+        static HOSTNAME: OnceLock<String> = OnceLock::new();
+        HOSTNAME
+            .get_or_init(|| {
+                // Try /etc/hostname, then HOSTNAME env, then fall back.
+                std::fs::read_to_string("/etc/hostname")
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| std::env::var("HOSTNAME").ok())
+                    .unwrap_or_else(|| "unknown".to_string())
+            })
+            .clone()
     }
     #[cfg(not(unix))]
     {
