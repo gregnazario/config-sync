@@ -12,10 +12,13 @@ succeeds on each platform.
 | `cs-storage` (default features) | ✅ host | ✅ check | ✅ check | ✅ check |
 | `cs-manifest` (pure Rust, no C deps) | ✅ host | ✅ check | ✅ check | ✅ check |
 | `cs-sync` (depends on cs-crypto via cs-storage only at type level; pure-Rust logic) | ✅ host | (see cs-crypto) | (see cs-crypto) | (see cs-crypto) |
+| `cs-ui` (default = terminal feature; dialoguer/console) | ✅ host | (native build) | (native build) | (native build) |
+| `cs-ui` (`--no-default-features`) — logic is pure Rust but pulls cs-sync→cs-crypto | ✅ host | (see cs-crypto) | (see cs-crypto) | (see cs-crypto) |
 | `cs-keys` (default features) | ✅ host | ⛔ liboqs | ⛔ liboqs | ⛔ liboqs |
 | `cs-keys` (`--features keyring`) | ✅ apple-native | (native build) | (native build) | (native build) |
 | `cs-crypto` | ✅ host + tests | ⛔ liboqs | ⛔ liboqs | ⛔ liboqs |
 | `cs-storage` (`--features s3`) | (native build) | (native build) | (native build) | (native build) |
+| `cs-storage` (`--features webdav`) reqwest+rustls | (native build) | (native build) | (native build) | (native build) |
 
 > **Cycle 2 additions:** `cs-manifest` is pure Rust (serde/postcard/sha2) and
 > type-checks on all four platforms. `cs-sync`'s logic is pure Rust; its only
