@@ -18,6 +18,7 @@ cs-storage = { path = "../cs-storage" }
 cs-config = { path = "../cs-config" }
 cs-manifest = { path = "../cs-manifest" }
 cs-sync = { path = "../cs-sync" }
+cs-ui = { path = "../cs-ui", default-features = false }
 tokio = { version = "1", features = ["macros", "rt"] }
 bytes = { workspace = true }
 tempfile = "3"

@@ -1,0 +1,18 @@
+[package]
+name = "cs-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["terminal"]
+# Interactive terminal resolver backed by dialoguer/console. Off by default in
+# unit tests so they can inject a fake interactive surface.
+terminal = ["dep:dialoguer", "dep:console"]
+
+[dependencies]
+cs-sync = { path = "../cs-sync" }
+cs-manifest = { path = "../cs-manifest" }
+thiserror = { workspace = true }
+dialoguer = { version = "0.11", optional = true }
+console = { version = "0.15", optional = true }
