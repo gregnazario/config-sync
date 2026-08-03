@@ -25,12 +25,20 @@ default = []
 #   Linux          -> linux-native-sync-persistent (linux-keyutils + Secret Service)
 #   FreeBSD/OpenBSD-> sync-secret-service (Secret Service via D-Bus)
 keyring = ["dep:keyring"]
+# Enable biometric-gated storage (Touch ID / Face ID + device passcode on
+# macOS; falls back to the regular keyring store on other platforms).
+biometric = ["keyring", "dep:security-framework"]
 
 # --- keyring core ---------------------------------------------------------
 [dependencies.keyring]
 version = "3"
 optional = true
 default-features = false
+
+# --- security-framework (macOS biometric access control) ------------------
+[dependencies.security-framework]
+version = "3"
+optional = true
 
 # --- per-target native backends ------------------------------------------
 # Each target only activates its own backend; the others are no-ops there.

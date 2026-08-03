@@ -18,7 +18,7 @@ pub fn run(cli: &Cli) -> Result<(), CliError> {
 }
 
 async fn run_async(cli: &Cli) -> Result<(), CliError> {
-    let state = AppState::new(cli.config_dir.clone())?;
+    let state = AppState::new(cli.config_dir.clone(), !cli.no_biometrics)?;
     match &cli.command {
         Command::Init(args) => cmd_init(&state, args),
         Command::Add(args) => cmd_add(&state, args),
@@ -41,7 +41,20 @@ fn cmd_init(state: &AppState, args: &InitArgs) -> Result<(), CliError> {
     // Generate a device identity and persist it.
     let id = cs_keys::DeviceIdentity::new();
     let store = state.secret_store();
-    state.store_identity(&store, &id)?;
+    state.store_identity(&store, &id).map_err(|e| {
+        // A biometric store needs a signed+entitled build to create the ACL'd
+        // item; give the user an actionable hint rather than a raw keychain err.
+        match &e {
+            CliError::Keys(cs_keys::KeysError::Keychain(msg)) if msg.contains("entitlement") => {
+                CliError::Plain(format!(
+                    "could not create a biometric-gated keychain item ({msg}).\n\
+                     This usually means the binary isn't signed/entitled for Touch ID.\n\
+                     Re-run with --no-biometrics to use the plain keychain/file store."
+                ))
+            }
+            _ => e,
+        }
+    })?;
     state.save_config(&cfg)?;
     println!(
         "Initialized config-sync at {}.\nDevice id: {}\nIdentity stored in {}.\n\
@@ -291,6 +304,14 @@ fn store_kind(store: &crate::state::AppStore) -> &'static str {
         crate::state::AppStore::File(_) => "local file",
         #[cfg(feature = "keyring-store")]
         crate::state::AppStore::Keyring(_) => "OS keychain",
+        #[cfg(feature = "biometric")]
+        crate::state::AppStore::Biometric(b) => {
+            if b.is_biometric_gated() {
+                "biometric-gated keychain"
+            } else {
+                "OS keychain (biometrics unavailable on this platform)"
+            }
+        }
     }
 }
 

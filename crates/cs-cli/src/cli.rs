@@ -14,6 +14,11 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub config_dir: Option<std::path::PathBuf>,
 
+    /// Disable biometric gating for the device identity (use the plain
+    /// keychain / file store instead of Touch ID / Windows Hello).
+    #[arg(long, global = true, default_value_t = false)]
+    pub no_biometrics: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }

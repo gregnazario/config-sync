@@ -10,6 +10,9 @@ mod secret_store;
 #[cfg(feature = "keyring")]
 mod keyring_store;
 
+#[cfg(feature = "biometric")]
+mod biometric_store;
+
 pub use error::KeysError;
 pub use identity::{
     identity_to_bytes, load_identity, load_identity_from_bytes, store_identity, DeviceIdentity,
@@ -22,3 +25,6 @@ pub use secret_store::{InMemoryStore, SecretStore};
 
 #[cfg(feature = "keyring")]
 pub use keyring_store::KeyringStore;
+
+#[cfg(feature = "biometric")]
+pub use biometric_store::BiometricStore;

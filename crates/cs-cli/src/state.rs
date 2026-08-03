@@ -14,19 +14,25 @@ pub struct AppState {
     pub config_dir: PathBuf,
     pub store_dir: PathBuf,
     pub config_path: PathBuf,
+    pub prefer_biometrics: bool,
 }
 
 /// How the device identity is persisted. Tests use `File` (a plain file in the
-/// config dir); production uses `Keyring` (the OS keychain).
+/// config dir); production uses `Keyring` (the OS keychain) or `Biometric`
+/// (Touch ID / Windows Hello gated keychain).
 pub enum AppStore {
     File(FileSecretStore),
     #[cfg(feature = "keyring-store")]
     Keyring(cs_keys::KeyringStore),
+    #[cfg(feature = "biometric")]
+    Biometric(cs_keys::BiometricStore),
 }
 
 impl AppState {
     /// Resolve the config dir from the CLI override or the platform default.
-    pub fn new(config_dir: Option<PathBuf>) -> Result<Self, CliError> {
+    /// `prefer_biometrics` selects a biometric-gated store when the feature is
+    /// available (ignored otherwise).
+    pub fn new(config_dir: Option<PathBuf>, prefer_biometrics: bool) -> Result<Self, CliError> {
         let config_dir = match config_dir {
             Some(d) => d,
             None => default_config_dir()?,
@@ -35,6 +41,7 @@ impl AppState {
             store_dir: config_dir.join(STORE_DIR),
             config_path: config_dir.join(CONFIG_FILE),
             config_dir,
+            prefer_biometrics,
         })
     }
 
@@ -44,6 +51,7 @@ impl AppState {
             config_dir: root.to_path_buf(),
             store_dir: root.join(STORE_DIR),
             config_path: root.join(CONFIG_FILE),
+            prefer_biometrics: false,
         }
     }
 
@@ -96,6 +104,12 @@ impl AppState {
     }
 
     pub fn secret_store(&self) -> AppStore {
+        // Prefer the biometric-gated store when the feature is on and the user
+        // hasn't opted out with --no-biometrics.
+        #[cfg(feature = "biometric")]
+        if self.prefer_biometrics {
+            return AppStore::Biometric(cs_keys::BiometricStore::new("config-sync"));
+        }
         #[cfg(feature = "keyring-store")]
         {
             return AppStore::Keyring(cs_keys::KeyringStore::new("config-sync"));
@@ -256,6 +270,8 @@ impl AppStore {
             AppStore::File(f) => f.put(account, secret)?,
             #[cfg(feature = "keyring-store")]
             AppStore::Keyring(k) => k.put(account, secret)?,
+            #[cfg(feature = "biometric")]
+            AppStore::Biometric(b) => b.put(account, secret)?,
         }
         Ok(())
     }
@@ -264,6 +280,8 @@ impl AppStore {
             AppStore::File(f) => f.get(account).map_err(CliError::from),
             #[cfg(feature = "keyring-store")]
             AppStore::Keyring(k) => k.get(account).map_err(CliError::from),
+            #[cfg(feature = "biometric")]
+            AppStore::Biometric(b) => b.get(account).map_err(CliError::from),
         }
     }
 }

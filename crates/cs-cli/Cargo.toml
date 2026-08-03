@@ -9,10 +9,13 @@ name = "config-sync"
 path = "src/main.rs"
 
 [features]
-default = ["keyring-store", "terminal"]
+default = ["keyring-store", "biometric", "terminal"]
 # Use the OS keychain for device identity. Off in tests so they use an
 # in-process file-backed secret store.
 keyring-store = ["cs-keys/keyring"]
+# Gate the device identity behind biometrics (Touch ID / Face ID + device
+# passcode on macOS; falls back to the plain keyring store elsewhere).
+biometric = ["cs-keys/biometric", "keyring-store"]
 # Interactive terminal conflict resolver (dialoguer/console). Off in tests.
 terminal = ["cs-ui/terminal"]
 
