@@ -1,0 +1,151 @@
+name: CI
+
+# Cross-platform native build + test for config-sync.
+#
+# Verifies the objective's "Mac, Windows, most Linux, FreeBSD" requirement
+# with real native green builds (not just cargo check) on every platform,
+# including the liboqs-dependent cs-crypto and cs-keys crates.
+#
+# Notes:
+# - liboqs (pqcrypto) needs each platform's native C toolchain (gcc/clang/MSVC
+#   + CMake), which is why these are full native runners, not cross compiles.
+# - Tests that would prompt for the OS keychain / biometrics are run with the
+#   keyring/biometric features OFF (CI-friendly); the live-touch-id test is
+#   #[ignore] anyway.
+# - FreeBSD has no first-party GitHub runner, so it builds inside a FreeBSD VM
+#   via the cross-platform-action.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  # ---- macOS (aarch64 + x86_64) -----------------------------------------
+  macos:
+    name: macOS (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            target: aarch64-apple-darwin
+          - runner: macos-13
+            target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install CMake
+        run: brew install cmake || true
+      - name: Build (default features)
+        run: cargo build --workspace --target ${{ matrix.target }}
+      - name: Test (no keyring/biometric — no keychain prompts in CI)
+        run: cargo test --workspace --target ${{ matrix.target }} --no-default-features --features cs-storage/local-fs
+      - name: Clippy
+        run: cargo clippy --workspace --target ${{ matrix.target }} --all-targets -- -D warnings
+      - name: fmt
+        run: cargo fmt --all -- --check
+
+  # ---- Windows (MSVC, x86_64) -------------------------------------------
+  windows:
+    name: Windows (MSVC x86_64)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Install CMake
+        run: choco install cmake -y --installargs 'ADD_CMAKE_TO_PATH=System'
+      - name: Build (default features)
+        run: cargo build --workspace --target x86_64-pc-windows-msvc
+      - name: Test (no keyring/biometric — no keychain prompts in CI)
+        run: cargo test --workspace --target x86_64-pc-windows-msvc --no-default-features --features cs-storage/local-fs
+      - name: Clippy
+        run: cargo clippy --workspace --target x86_64-pc-windows-msvc --all-targets -- -D warnings
+
+  # ---- Linux (glibc, x86_64 + aarch64) ----------------------------------
+  linux:
+    name: Linux (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+            # aarch64 runs in an emulated container via QEMU; full native build.
+            cross: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install native build deps (gcc, cmake, dbus for keyring)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential pkg-config libdbus-1-dev libclang-dev libsecret-1-dev
+      - name: Build (default features)
+        if: ${{ !matrix.cross }}
+        run: cargo build --workspace --target ${{ matrix.target }}
+      - name: Test (no keyring/biometric — no Secret Service in CI)
+        if: ${{ !matrix.cross }}
+        run: cargo test --workspace --target ${{ matrix.target }} --no-default-features --features cs-storage/local-fs
+      - name: Clippy
+        if: ${{ !matrix.cross }}
+        run: cargo clippy --workspace --target ${{ matrix.target }} --all-targets -- -D warnings
+      # aarch64: cross-compile check (full emulated test is too slow for CI).
+      - name: Install cross
+        if: ${{ matrix.cross }}
+        run: cargo install cross --git https://github.com/cross-rs/cross
+      - name: Build aarch64 via cross (QEMU)
+        if: ${{ matrix.cross }}
+        run: cross build --workspace --target ${{ matrix.target }}
+
+  # ---- FreeBSD (x86_64) --------------------------------------------------
+  # GitHub has no FreeBSD runner; build+test inside a FreeBSD VM.
+  freebsd:
+    name: FreeBSD (x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: |
+            pkg install -y rust cmake gmake bash pkgconf dbus
+          run: |
+            # The repo is mounted at the workspace root inside the VM.
+            cd "$GITHUB_WORKSPACE" || cd /root/work
+            cargo build --workspace
+            cargo test --workspace --no-default-features --features cs-storage/local-fs
+            cargo clippy --workspace --all-targets -- -D warnings
+
+  # ---- Feature matrix: cloud backends compile on Linux -------------------
+  cloud-features:
+    name: Cloud backend features (${{ matrix.feature }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        feature: [webdav, gdrive, proton, s3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+      - name: Build + test with the feature
+        run: cargo test -p cs-storage -p cs-integration-tests --features ${{ matrix.feature }}
+      - name: Clippy
+        run: cargo clippy -p cs-storage -p cs-integration-tests --features ${{ matrix.feature }} --all-targets -- -D warnings

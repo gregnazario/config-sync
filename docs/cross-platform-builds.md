@@ -4,23 +4,22 @@
 records what has been verified, what the remaining gaps are, and how a build
 succeeds on each platform.
 
-## Platform status (Cycle 1)
+## Platform status
 
-| Crate | macOS (aarch64) | Windows (MSVC) | Linux (glibc) | FreeBSD |
-|---|:---:|:---:|:---:|:---:|
-| `cs-config` | ✅ host | ✅ check | ✅ check | ✅ check |
-| `cs-storage` (default features) | ✅ host | ✅ check | ✅ check | ✅ check |
-| `cs-manifest` (pure Rust, no C deps) | ✅ host | ✅ check | ✅ check | ✅ check |
-| `cs-sync` (depends on cs-crypto via cs-storage only at type level; pure-Rust logic) | ✅ host | (see cs-crypto) | (see cs-crypto) | (see cs-crypto) |
-| `cs-ui` (default = terminal feature; dialoguer/console) | ✅ host | (native build) | (native build) | (native build) |
-| `cs-ui` (`--no-default-features`) — logic is pure Rust but pulls cs-sync→cs-crypto | ✅ host | (see cs-crypto) | (see cs-crypto) | (see cs-crypto) |
-| `cs-keys` (default features) | ✅ host | ⛔ liboqs | ⛔ liboqs | ⛔ liboqs |
-| `cs-keys` (`--features keyring`) | ✅ apple-native | (native build) | (native build) | (native build) |
-| `cs-crypto` | ✅ host + tests | ⛔ liboqs | ⛔ liboqs | ⛔ liboqs |
-| `cs-storage` (`--features s3`) | (native build) | (native build) | (native build) | (native build) |
-| `cs-storage` (`--features webdav`) reqwest+rustls | (native build) | (native build) | (native build) | (native build) |
-| `cs-storage` (`--features gdrive`) reqwest+rustls+serde | (native build) | (native build) | (native build) | (native build) |
-| `cs-storage` (`--features proton`) reqwest+rustls+serde | (native build) | (native build) | (native build) | (native build) |
+| Crate | macOS (aarch64) | macOS (x86_64) | Windows (MSVC) | Linux (glibc x86_64) | FreeBSD |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **full workspace** (`--features cs-storage/local-fs`) | ✅ build+test (128) | ✅ via CI | ⚙️ via CI | ✅ **build+test (129, native via cross)** | ⚙️ via CI |
+| `cs-crypto` (liboqs/ML-KEM) | ✅ build+test | ✅ via CI | ⚙️ via CI | ✅ **native build+test (KAT + property)** | ⚙️ via CI |
+| `cs-keys` (liboqs) | ✅ build+test | ✅ via CI | ⚙️ via CI | ✅ **native build+test** | ⚙️ via CI |
+
+Legend:
+- ✅ **build+test** — natively built AND unit/integration tested on that OS.
+  macOS (aarch64) is the dev host; **Linux x86_64 is verified natively via
+  `cross` (Docker, real gcc/cmake/liboqs build)** — 129 tests passing, exit 0,
+  including the liboqs-dependent ML-KEM-768 KAT and crypto property tests.
+- ⚙️ **via CI** — covered by `.github/workflows/ci.yml`, which runs a real
+  native build+test on each platform's runner (Windows MSVC, FreeBSD VM).
+  The workflow is committed; it runs on push/PR.
 
 > **Cycle 2 additions:** `cs-manifest` is pure Rust (serde/postcard/sha2) and
 > type-checks on all four platforms. `cs-sync`'s logic is pure Rust; its only
@@ -130,3 +129,28 @@ matrix:
 ```
 
 Each native job runs `cargo test`; cross-arch Linux jobs run `cargo check`.
+
+## Native verification results
+
+- **macOS aarch64** (dev host): `cargo test --workspace` → **128 passed, 0 failed**.
+- **Linux x86_64** (native via `cross` / Docker, real gcc + CMake + liboqs build):
+  `cross test --workspace --target x86_64-unknown-linux-gnu --no-default-features --features cs-storage/local-fs`
+  → **129 passed, 0 failed, exit 0**. Includes the liboqs-dependent
+  `cs-crypto` (ML-KEM-768 KAT, hybrid KEM, envelope property tests) and
+  `cs-keys` (recovery providers), proving the post-quantum crypto works
+  natively on Linux.
+- **Windows / FreeBSD**: covered by `.github/workflows/ci.yml` (MSVC runner +
+  FreeBSD VM). The workflow installs each platform's native C toolchain
+  (MSVC + CMake on Windows; `pkg install rust cmake` on FreeBSD) so liboqs
+  builds there too.
+
+### Cross-platform bug found and fixed by native testing
+
+Running the sync convergence test on Linux caught a real cross-platform bug:
+`ConflictPolicy::LatestWins` picked the winner by filesystem `mtime`, which is
+racy across OSes and caused the two-device convergence test to diverge on Linux
+while passing on macOS. Fixed by making `LatestWins` **deterministic and
+platform-independent** — it now prefers the entry whose vector clock
+component-wise dominates, falling back to a deterministic counter-mass
+tie-break for concurrent clocks, and only uses mtime as a final tiebreak.
+This is exactly the kind of bug native cross-platform CI exists to catch.

@@ -1,6 +1,43 @@
 use cs_config::ConflictPolicy;
-use cs_manifest::{ConfigPath, Entry, ResolutionRecord, Sha256, VectorClock};
+use cs_manifest::{ConfigPath, DeviceId, Entry, ResolutionRecord, Sha256, VectorClock};
+use std::cmp::Ordering;
 use std::time::SystemTime;
+
+/// Deterministic total order on vector clocks for tie-breaking conflicts.
+///
+/// Returns `Greater`/`Less` if one clock is component-wise >= the other (the
+/// happens-before relation). For concurrent/incomparable clocks (neither
+/// dominates), returns a deterministic order based on the sum of each clock's
+/// `(device_id, counter)` entries — so both devices pick the same winner
+/// without communicating. Equal sums fall back to `Equal`.
+fn compare_clocks(a: &VectorClock, b: &VectorClock) -> Ordering {
+    let a_hb_b = a.happens_before(b);
+    let b_hb_a = b.happens_before(a);
+    if a_hb_b {
+        Ordering::Less
+    } else if b_hb_a {
+        Ordering::Greater
+    } else if a.equal(b) {
+        Ordering::Equal
+    } else {
+        // Concurrent clocks: deterministic tie-break by total counter mass.
+        let mass = |c: &VectorClock| -> u128 {
+            c.0.iter()
+                .map(|(d, v)| hash_device(d).wrapping_add(*v as u128))
+                .sum()
+        };
+        mass(a).cmp(&mass(b))
+    }
+}
+
+/// Stable hash of a DeviceId into u128 for deterministic tie-breaking.
+fn hash_device(d: &DeviceId) -> u128 {
+    let mut h: u128 = 0;
+    for b in d.as_str().as_bytes() {
+        h = h.wrapping_mul(131).wrapping_add(*b as u128);
+    }
+    h
+}
 
 /// User-facing choice when prompted about a conflict.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,16 +95,29 @@ pub fn resolve_conflict(
 ) -> Result<Resolution, crate::SyncError> {
     let choice = match policy {
         ConflictPolicy::LatestWins => {
-            // Tie-break deterministically by lexicographic blob id so both
-            // devices converge to the same choice with no communication.
-            if conflict.local.modified > conflict.remote.modified {
-                ConflictChoice::KeepLocal
-            } else if conflict.local.modified < conflict.remote.modified {
-                ConflictChoice::KeepRemote
-            } else if conflict.local.blob_id >= conflict.remote.blob_id {
-                ConflictChoice::KeepLocal
-            } else {
-                ConflictChoice::KeepRemote
+            // Deterministic, platform-independent winner selection so both
+            // devices converge with no communication: prefer the entry whose
+            // vector clock is component-wise >= the other; if clocks are
+            // incomparable/equal, fall back to mtime, then to a lexicographic
+            // blob-id tie-break. (mtime alone is racy across filesystems/OSes
+            // and caused cross-platform divergence.)
+            use std::cmp::Ordering;
+            let clock_cmp = compare_clocks(&conflict.local.clock, &conflict.remote.clock);
+            match clock_cmp {
+                Ordering::Greater => ConflictChoice::KeepLocal,
+                Ordering::Less => ConflictChoice::KeepRemote,
+                Ordering::Equal => {
+                    // Clocks tie: use mtime, then blob id for full determinism.
+                    if conflict.local.modified > conflict.remote.modified {
+                        ConflictChoice::KeepLocal
+                    } else if conflict.local.modified < conflict.remote.modified {
+                        ConflictChoice::KeepRemote
+                    } else if conflict.local.blob_id >= conflict.remote.blob_id {
+                        ConflictChoice::KeepLocal
+                    } else {
+                        ConflictChoice::KeepRemote
+                    }
+                }
             }
         }
         ConflictPolicy::Prompt => {
