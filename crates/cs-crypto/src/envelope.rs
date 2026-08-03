@@ -43,8 +43,8 @@ fn random_nonce24() -> Result<[u8; 24], CryptoError> {
 }
 
 pub fn seal(plaintext: &[u8], aad: &Aad, recip: &RecipientKeys) -> Result<SealOutput, CryptoError> {
-    let dek = generate_dek();
-    let (kek, ct) = hybrid_encapsulate(recip);
+    let dek = generate_dek()?;
+    let (kek, ct) = hybrid_encapsulate(recip)?;
     let wrapped_dek = wrap_key(dek.as_bytes(), &kek, aad)?;
 
     let cipher = XChaCha20Poly1305::new(Key::from_slice(dek.as_bytes()));

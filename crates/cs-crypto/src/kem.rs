@@ -51,32 +51,34 @@ pub fn generate_recipient_keypair() -> (RecipientKeys, RecipientSecrets) {
 }
 
 fn derive_wrap_key(ss_pq: &[u8], ss_classic: &[u8]) -> [u8; 32] {
-    let mut ikm = Vec::with_capacity(ss_pq.len() + ss_classic.len());
-    ikm.extend_from_slice(ss_pq);
-    ikm.extend_from_slice(ss_classic);
+    // Both shared secrets are exactly 32 bytes — use a stack array, zeroized after.
+    let mut ikm = [0u8; 64];
+    ikm[..ss_pq.len()].copy_from_slice(ss_pq);
+    ikm[ss_pq.len()..ss_pq.len() + ss_classic.len()].copy_from_slice(ss_classic);
     let hk = Hkdf::<Sha256>::new(None, &ikm);
     let mut okm = [0u8; 32];
     hk.expand(KEM_INFO, &mut okm).expect("32 <= 255");
+    zeroize::Zeroize::zeroize(&mut ikm);
     okm
 }
 
 /// Encapsulate a fresh 32-byte wrap key for `recip`. Returns the key together
 /// with the ciphertext the recipient needs to recover it.
-pub fn hybrid_encapsulate(recip: &RecipientKeys) -> ([u8; 32], HybridKemCt) {
-    let pq_pk = mlkem768::PublicKey::from_bytes(&recip.kem_pq).expect("valid pq public key");
+pub fn hybrid_encapsulate(recip: &RecipientKeys) -> Result<([u8; 32], HybridKemCt), CryptoError> {
+    let pq_pk = mlkem768::PublicKey::from_bytes(&recip.kem_pq).map_err(|_| CryptoError::Kem)?;
     let (ss_pq, pq_ct) = mlkem768::encapsulate(&pq_pk);
     let eph_sk = StaticSecret::random();
     let eph_pk = PublicKey::from(&eph_sk);
     let classic_pk = PublicKey::from(recip.kem_classic);
     let ss_classic = eph_sk.diffie_hellman(&classic_pk);
     let wrap_key = derive_wrap_key(ss_pq.as_bytes(), ss_classic.as_bytes());
-    (
+    Ok((
         wrap_key,
         HybridKemCt {
             pq_ct: pq_ct.as_bytes().to_vec(),
             classic_eph: eph_pk.to_bytes(),
         },
-    )
+    ))
 }
 
 /// Decapsulate the wrap key from `ct` using `secrets`. Returns `Err(Kem)` if
@@ -104,7 +106,7 @@ mod tests {
     #[test]
     fn encapsulate_decapsulate_round_trips() {
         let (pk, sk) = generate_recipient_keypair();
-        let (wk1, ct) = hybrid_encapsulate(&pk);
+        let (wk1, ct) = hybrid_encapsulate(&pk).unwrap();
         let wk2 = hybrid_decapsulate(&ct, &sk).expect("decap");
         assert_eq!(wk1, wk2, "matching private key must recover the wrap key");
     }
@@ -117,7 +119,7 @@ mod tests {
         let (_pk_c, sk_c) = generate_recipient_keypair();
 
         // Encapsulate to pk_b, recover correctly with sk_b.
-        let (wk_correct, ct) = hybrid_encapsulate(&pk_b);
+        let (wk_correct, ct) = hybrid_encapsulate(&pk_b).unwrap();
         let wk_match = hybrid_decapsulate(&ct, &sk_b).unwrap();
         assert_eq!(wk_correct, wk_match);
 
@@ -132,8 +134,8 @@ mod tests {
     #[test]
     fn two_encapsulations_produce_distinct_keys() {
         let (pk, _sk) = generate_recipient_keypair();
-        let (wk1, _ct1) = hybrid_encapsulate(&pk);
-        let (wk2, _ct2) = hybrid_encapsulate(&pk);
+        let (wk1, _ct1) = hybrid_encapsulate(&pk).unwrap();
+        let (wk2, _ct2) = hybrid_encapsulate(&pk).unwrap();
         assert_ne!(wk1, wk2, "each encapsulation is freshly random");
     }
 

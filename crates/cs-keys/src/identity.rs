@@ -26,13 +26,13 @@ const ACCOUNT: &str = "device-identity";
 
 impl DeviceIdentity {
     /// Generate a fresh device identity: a new RIK and a new recipient keypair.
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self, KeysError> {
         let (pk, sk) = generate_recipient_keypair();
-        Self {
-            rik: generate_rik(),
+        Ok(Self {
+            rik: generate_rik().map_err(|e| KeysError::Recovery(e.to_string()))?,
             recipient_keys: pk,
             recipient_secrets: sk,
-        }
+        })
     }
 
     /// Build an identity from a recovered RIK, generating a fresh recipient
@@ -45,12 +45,6 @@ impl DeviceIdentity {
             recipient_keys: pk,
             recipient_secrets: sk,
         }
-    }
-}
-
-impl Default for DeviceIdentity {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -122,7 +116,7 @@ mod tests {
     #[test]
     fn store_then_load_round_trips() {
         let store = InMemoryStore::new();
-        let id = DeviceIdentity::new();
+        let id = DeviceIdentity::new().unwrap();
         store_identity(&store, &id).unwrap();
         let loaded = load_identity(&store).unwrap();
         assert_eq!(loaded.rik.as_bytes(), id.rik.as_bytes());
@@ -141,7 +135,7 @@ mod tests {
 
     #[test]
     fn stored_identity_is_encryptable_by_its_own_recipient() {
-        let id = DeviceIdentity::new();
+        let id = DeviceIdentity::new().unwrap();
         let aad = cs_crypto::Aad {
             path: "self".into(),
             version: 1,
@@ -164,7 +158,7 @@ mod tests {
         // After a store/load cycle, the device must still be able to open files
         // sealed to its public key.
         let store = InMemoryStore::new();
-        let id = DeviceIdentity::new();
+        let id = DeviceIdentity::new().unwrap();
         let pk = id.recipient_keys.kem_pq.clone();
         store_identity(&store, &id).unwrap();
         let loaded = load_identity(&store).unwrap();

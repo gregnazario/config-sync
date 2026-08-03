@@ -1,9 +1,9 @@
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 macro_rules! secret_key {
     ($name:ident, $doc:expr) => {
         #[doc = $doc]
-        #[derive(Clone, Zeroize)]
+        #[derive(Clone, Zeroize, ZeroizeOnDrop)]
         #[repr(transparent)]
         pub struct $name([u8; 32]);
 
@@ -14,14 +14,14 @@ macro_rules! secret_key {
             pub fn as_bytes(&self) -> &[u8; 32] {
                 &self.0
             }
-            pub fn into_bytes(self) -> [u8; 32] {
-                self.0
+            pub fn into_bytes(self) -> Zeroizing<[u8; 32]> {
+                Zeroizing::new(self.0)
             }
         }
 
         impl PartialEq for $name {
             fn eq(&self, other: &Self) -> bool {
-                // constant-time-ish comparison via fixed_eq
+                // constant-time comparison
                 fixed_eq(&self.0, &other.0)
             }
         }
@@ -53,20 +53,21 @@ fn fixed_eq(a: &[u8; 32], b: &[u8; 32]) -> bool {
 }
 
 /// Generate a fresh random 32-byte secret using the OS CSPRNG.
-fn random_32() -> [u8; 32] {
-    let mut buf = [0u8; 32];
-    getrandom::fill(&mut buf).expect("OS RNG failure");
-    buf
+fn random_32() -> Result<[u8; 32], crate::CryptoError> {
+    let mut buf = Zeroizing::new([0u8; 32]);
+    getrandom::fill(buf.as_mut())
+        .map_err(|_| crate::CryptoError::Encode("OS RNG failure".into()))?;
+    Ok(*buf)
 }
 
-pub fn generate_rik() -> Rik {
-    Rik(random_32())
+pub fn generate_rik() -> Result<Rik, crate::CryptoError> {
+    Ok(Rik(random_32()?))
 }
-pub fn generate_mk() -> Mk {
-    Mk(random_32())
+pub fn generate_mk() -> Result<Mk, crate::CryptoError> {
+    Ok(Mk(random_32()?))
 }
-pub fn generate_dek() -> Dek {
-    Dek(random_32())
+pub fn generate_dek() -> Result<Dek, crate::CryptoError> {
+    Ok(Dek(random_32()?))
 }
 
 #[cfg(test)]
@@ -75,8 +76,8 @@ mod tests {
 
     #[test]
     fn generated_keys_are_distinct() {
-        let a = generate_dek();
-        let b = generate_dek();
+        let a = generate_dek().unwrap();
+        let b = generate_dek().unwrap();
         assert_ne!(a.as_bytes(), b.as_bytes());
     }
 
@@ -89,9 +90,9 @@ mod tests {
 
     #[test]
     fn rik_mk_dek_each_generate_32_bytes() {
-        assert_eq!(generate_rik().as_bytes().len(), 32);
-        assert_eq!(generate_mk().as_bytes().len(), 32);
-        assert_eq!(generate_dek().as_bytes().len(), 32);
+        assert_eq!(generate_rik().unwrap().as_bytes().len(), 32);
+        assert_eq!(generate_mk().unwrap().as_bytes().len(), 32);
+        assert_eq!(generate_dek().unwrap().as_bytes().len(), 32);
     }
 
     #[test]

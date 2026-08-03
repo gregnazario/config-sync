@@ -39,7 +39,8 @@ fn cmd_init(state: &AppState, args: &InitArgs) -> Result<(), CliError> {
     let host = args.host.clone().unwrap_or_else(hostname);
     let mut cfg = AppState::starter_config(&host);
     // Generate a device identity and persist it.
-    let id = cs_keys::DeviceIdentity::new();
+    let id = cs_keys::DeviceIdentity::new()
+        .map_err(|e| CliError::Plain(format!("identity generation: {e}")))?;
     let store = state.secret_store();
     state.store_identity(&store, &id).map_err(|e| {
         // A biometric store needs a signed+entitled build to create the ACL'd

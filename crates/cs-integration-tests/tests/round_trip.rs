@@ -69,7 +69,7 @@ fn device_identity_persists_and_still_decrypts() {
     // Identity store/load cycle, then prove the reloaded identity can decrypt a
     // file sealed to its own public key.
     let store = InMemoryStore::new();
-    let id = DeviceIdentity::new();
+    let id = DeviceIdentity::new().unwrap();
     let pk_bytes = id.recipient_keys.kem_pq.clone();
     store_identity(&store, &id).unwrap();
     let loaded = load_identity(&store).unwrap();
@@ -96,7 +96,7 @@ fn device_identity_persists_and_still_decrypts() {
 fn mnemonic_recovery_round_trips_rik() {
     // Lose the device, keep only the mnemonic words -> recover the RIK.
     let store = InMemoryStore::new();
-    let id = DeviceIdentity::new();
+    let id = DeviceIdentity::new().unwrap();
     store_identity(&store, &id).unwrap();
 
     let mp = MnemonicProvider::fast_for_tests();
