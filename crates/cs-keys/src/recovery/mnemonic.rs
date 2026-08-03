@@ -69,7 +69,8 @@ impl MnemonicProvider {
         m: u32,
         p: u32,
     ) -> Result<[u8; 32], KeysError> {
-        let params = Params::new(m, t, p, Some(32)).map_err(|e| KeysError::Recovery(e.to_string()))?;
+        let params =
+            Params::new(m, t, p, Some(32)).map_err(|e| KeysError::Recovery(e.to_string()))?;
         let a2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
         let mut out = [0u8; 32];
         a2.hash_password_into(recovery_key, salt, &mut out)
@@ -81,7 +82,8 @@ impl MnemonicProvider {
     /// seal the RIK to it. The mnemonic is returned for the user to transcribe;
     /// it is never stored in the bundle.
     pub fn seal_with_mnemonic(&self, rik: &[u8; 32]) -> Result<SealedWithMnemonic, KeysError> {
-        let mnemonic = bip39::Mnemonic::generate(24).map_err(|e| KeysError::Recovery(e.to_string()))?;
+        let mnemonic =
+            bip39::Mnemonic::generate(24).map_err(|e| KeysError::Recovery(e.to_string()))?;
         let recovery_key = mnemonic.to_seed("");
         let mut salt = [0u8; 16];
         getrandom::fill(&mut salt).map_err(|e| KeysError::Recovery(e.to_string()))?;
@@ -111,8 +113,13 @@ impl MnemonicProvider {
         let ct = cipher
             .encrypt(XNonce::from_slice(&nonce), Payload { msg: rik, aad: &[] })
             .map_err(|_| KeysError::Crypto(cs_crypto::CryptoError::AuthFailed))?;
-        let payload = MnemonicPayload { salt: *salt, nonce, ct };
-        let bytes = postcard::to_allocvec(&payload).map_err(|e| KeysError::Recovery(e.to_string()))?;
+        let payload = MnemonicPayload {
+            salt: *salt,
+            nonce,
+            ct,
+        };
+        let bytes =
+            postcard::to_allocvec(&payload).map_err(|e| KeysError::Recovery(e.to_string()))?;
         Ok(RecoveryBundle {
             kind: RecoveryKind::Mnemonic,
             payload: bytes,
@@ -127,8 +134,8 @@ impl MnemonicProvider {
     ) -> Result<[u8; 32], KeysError> {
         let p: MnemonicPayload = postcard::from_bytes(&bundle.payload)
             .map_err(|e| KeysError::Recovery(e.to_string()))?;
-        let mnemonic =
-            bip39::Mnemonic::parse_normalized(mnemonic_words).map_err(|e| KeysError::Recovery(e.to_string()))?;
+        let mnemonic = bip39::Mnemonic::parse_normalized(mnemonic_words)
+            .map_err(|e| KeysError::Recovery(e.to_string()))?;
         let recovery_key = mnemonic.to_seed("");
         let kek = Self::derive_kek(
             &recovery_key,
@@ -139,7 +146,13 @@ impl MnemonicProvider {
         )?;
         let cipher = XChaCha20Poly1305::new(Key::from_slice(&kek));
         let pt = cipher
-            .decrypt(XNonce::from_slice(&p.nonce), Payload { msg: &p.ct, aad: &[] })
+            .decrypt(
+                XNonce::from_slice(&p.nonce),
+                Payload {
+                    msg: &p.ct,
+                    aad: &[],
+                },
+            )
             .map_err(|_| KeysError::Crypto(cs_crypto::CryptoError::AuthFailed))?;
         let mut out = [0u8; 32];
         out.copy_from_slice(&pt);
@@ -163,7 +176,8 @@ impl RecoveryProvider for MnemonicProvider {
 
     fn recover(&self, _bundle: &RecoveryBundle) -> Result<[u8; 32], KeysError> {
         Err(KeysError::Recovery(
-            "MnemonicProvider::recover requires the mnemonic words; use recover_with_mnemonic".into(),
+            "MnemonicProvider::recover requires the mnemonic words; use recover_with_mnemonic"
+                .into(),
         ))
     }
 }
@@ -179,7 +193,9 @@ mod tests {
         let sealed = p.seal_with_mnemonic(&rik).unwrap();
         // The mnemonic is genuinely 24 words.
         assert_eq!(sealed.mnemonic_words.split_whitespace().count(), 24);
-        let got = p.recover_with_mnemonic(&sealed.bundle, &sealed.mnemonic_words).unwrap();
+        let got = p
+            .recover_with_mnemonic(&sealed.bundle, &sealed.mnemonic_words)
+            .unwrap();
         assert_eq!(got, rik);
     }
 
@@ -202,7 +218,9 @@ mod tests {
         // The bundle payload must not contain the mnemonic words.
         for word in sealed.mnemonic_words.split_whitespace() {
             assert!(
-                !postcard::to_allocvec(&sealed.bundle).unwrap().windows(word.len())
+                !postcard::to_allocvec(&sealed.bundle)
+                    .unwrap()
+                    .windows(word.len())
                     .any(|w| w == word.as_bytes()),
                 "bundle must not leak mnemonic word '{word}'"
             );

@@ -79,7 +79,11 @@ impl RemoteStore for LocalFs {
                     continue;
                 }
                 // Skip version sidecars.
-                if p.extension().and_then(|x| x.to_str()).map(|s| s.ends_with("version")).unwrap_or(false) {
+                if p.extension()
+                    .and_then(|x| x.to_str())
+                    .map(|s| s.ends_with("version"))
+                    .unwrap_or(false)
+                {
                     continue;
                 }
                 let meta = fs::metadata(&p).await?;
@@ -179,10 +183,22 @@ mod tests {
     async fn put_get_list_delete_round_trip() {
         let dir = tempfile::tempdir().unwrap();
         let st = store(&dir);
-        let e = st.put("blobs/abc", Bytes::from_static(b"data"), None).await.unwrap();
+        let e = st
+            .put("blobs/abc", Bytes::from_static(b"data"), None)
+            .await
+            .unwrap();
         assert_eq!(e.0, "1");
-        assert_eq!(st.get("blobs/abc").await.unwrap(), Bytes::from_static(b"data"));
-        let names: Vec<_> = st.list("").await.unwrap().into_iter().map(|m| m.name).collect();
+        assert_eq!(
+            st.get("blobs/abc").await.unwrap(),
+            Bytes::from_static(b"data")
+        );
+        let names: Vec<_> = st
+            .list("")
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
         assert!(names.contains(&"blobs/abc".to_string()));
         st.delete("blobs/abc").await.unwrap();
         assert!(matches!(
@@ -208,7 +224,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let st = store(&dir);
         let e1 = st.put("a", Bytes::from_static(b"v1"), None).await.unwrap();
-        let e2 = st.put("a", Bytes::from_static(b"v2"), Some(&e1)).await.unwrap();
+        let e2 = st
+            .put("a", Bytes::from_static(b"v2"), Some(&e1))
+            .await
+            .unwrap();
         assert_eq!(e2.0, "2");
         assert_eq!(st.get("a").await.unwrap(), Bytes::from_static(b"v2"));
     }
@@ -227,7 +246,9 @@ mod tests {
     async fn get_range_returns_subset() {
         let dir = tempfile::tempdir().unwrap();
         let st = store(&dir);
-        st.put("blob", Bytes::from_static(b"hello world"), None).await.unwrap();
+        st.put("blob", Bytes::from_static(b"hello world"), None)
+            .await
+            .unwrap();
         let sub = st.get_range("blob", 0..5).await.unwrap();
         assert_eq!(sub, Bytes::from_static(b"hello"));
         // Range past end clamps.
@@ -239,9 +260,19 @@ mod tests {
     async fn version_sidecars_are_hidden_from_list() {
         let dir = tempfile::tempdir().unwrap();
         let st = store(&dir);
-        st.put("blob", Bytes::from_static(b"x"), None).await.unwrap();
-        let names: Vec<_> = st.list("").await.unwrap().into_iter().map(|m| m.name).collect();
-        assert!(names.iter().all(|n| !n.ends_with(".version") && !n.contains(".version.")));
+        st.put("blob", Bytes::from_static(b"x"), None)
+            .await
+            .unwrap();
+        let names: Vec<_> = st
+            .list("")
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
+        assert!(names
+            .iter()
+            .all(|n| !n.ends_with(".version") && !n.contains(".version.")));
     }
 
     #[tokio::test]

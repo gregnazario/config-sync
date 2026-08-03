@@ -23,7 +23,10 @@ impl Default for ShamirProvider {
 
 impl RecoveryProvider for ShamirProvider {
     fn kind(&self) -> RecoveryKind {
-        RecoveryKind::Shamir { k: self.k, n: self.n }
+        RecoveryKind::Shamir {
+            k: self.k,
+            n: self.n,
+        }
     }
 
     fn seal(&self, rik: &[u8; 32]) -> Result<RecoveryBundle, KeysError> {
@@ -40,7 +43,8 @@ impl RecoveryProvider for ShamirProvider {
                 shares.len()
             )));
         }
-        let bytes = postcard::to_allocvec(&shares).map_err(|e| KeysError::Recovery(e.to_string()))?;
+        let bytes =
+            postcard::to_allocvec(&shares).map_err(|e| KeysError::Recovery(e.to_string()))?;
         Ok(RecoveryBundle {
             kind: self.kind(),
             payload: bytes,
@@ -48,8 +52,8 @@ impl RecoveryProvider for ShamirProvider {
     }
 
     fn recover(&self, bundle: &RecoveryBundle) -> Result<[u8; 32], KeysError> {
-        let shares_bytes: Vec<Vec<u8>> =
-            postcard::from_bytes(&bundle.payload).map_err(|e| KeysError::Recovery(e.to_string()))?;
+        let shares_bytes: Vec<Vec<u8>> = postcard::from_bytes(&bundle.payload)
+            .map_err(|e| KeysError::Recovery(e.to_string()))?;
         let shares: Vec<sharks::Share> = shares_bytes
             .iter()
             .filter_map(|b| sharks::Share::try_from(b.as_slice()).ok())
@@ -66,7 +70,9 @@ impl RecoveryProvider for ShamirProvider {
             .recover(&shares)
             .map_err(|e| KeysError::Recovery(e.to_string()))?;
         if secret.len() != 32 {
-            return Err(KeysError::Recovery("reconstructed secret not 32 bytes".into()));
+            return Err(KeysError::Recovery(
+                "reconstructed secret not 32 bytes".into(),
+            ));
         }
         let mut out = [0u8; 32];
         out.copy_from_slice(&secret);

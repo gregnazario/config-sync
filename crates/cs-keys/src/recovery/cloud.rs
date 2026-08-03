@@ -52,7 +52,8 @@ struct CloudPayload {
 
 impl CloudBundleProvider {
     fn derive(pass: &str, salt: &[u8; 16], t: u32, m: u32, p: u32) -> Result<[u8; 32], KeysError> {
-        let params = Params::new(m, t, p, Some(32)).map_err(|e| KeysError::Recovery(e.to_string()))?;
+        let params =
+            Params::new(m, t, p, Some(32)).map_err(|e| KeysError::Recovery(e.to_string()))?;
         let a2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
         let mut out = [0u8; 32];
         a2.hash_password_into(pass.as_bytes(), salt, &mut out)
@@ -109,7 +110,13 @@ impl CloudBundleProvider {
         )?;
         let cipher = XChaCha20Poly1305::new(Key::from_slice(&kek));
         let pt = cipher
-            .decrypt(XNonce::from_slice(&p.nonce), Payload { msg: &p.ct, aad: &[] })
+            .decrypt(
+                XNonce::from_slice(&p.nonce),
+                Payload {
+                    msg: &p.ct,
+                    aad: &[],
+                },
+            )
             .map_err(|_| KeysError::Crypto(cs_crypto::CryptoError::AuthFailed))?;
         let mut out = [0u8; 32];
         out.copy_from_slice(&pt);
@@ -130,7 +137,8 @@ impl RecoveryProvider for CloudBundleProvider {
 
     fn recover(&self, _bundle: &RecoveryBundle) -> Result<[u8; 32], KeysError> {
         Err(KeysError::Recovery(
-            "CloudBundleProvider::recover requires a passphrase; use recover_with_passphrase".into(),
+            "CloudBundleProvider::recover requires a passphrase; use recover_with_passphrase"
+                .into(),
         ))
     }
 }
@@ -143,8 +151,12 @@ mod tests {
     fn seal_with_passphrase_then_recover() {
         let p = CloudBundleProvider::fast_for_tests();
         let rik = [3u8; 32];
-        let bundle = p.seal_with_passphrase(&rik, "correct horse battery staple").unwrap();
-        let got = p.recover_with_passphrase(&bundle, "correct horse battery staple").unwrap();
+        let bundle = p
+            .seal_with_passphrase(&rik, "correct horse battery staple")
+            .unwrap();
+        let got = p
+            .recover_with_passphrase(&bundle, "correct horse battery staple")
+            .unwrap();
         assert_eq!(got, rik);
     }
 
@@ -160,14 +172,14 @@ mod tests {
     fn bundle_does_not_embed_passphrase_or_rlk_marker() {
         let p = CloudBundleProvider::fast_for_tests();
         let rik = [0x42u8; 32];
-        let bundle = p.seal_with_passphrase(&rik, "secret-pass-UNIQUE-MARKER-xyz").unwrap();
+        let bundle = p
+            .seal_with_passphrase(&rik, "secret-pass-UNIQUE-MARKER-xyz")
+            .unwrap();
         let encoded = postcard::to_allocvec(&bundle).unwrap();
         // The passphrase must never appear verbatim in the bundle.
-        assert!(
-            !encoded
-                .windows(b"secret-pass-UNIQUE-MARKER-xyz".len())
-                .any(|w| w == b"secret-pass-UNIQUE-MARKER-xyz")
-        );
+        assert!(!encoded
+            .windows(b"secret-pass-UNIQUE-MARKER-xyz".len())
+            .any(|w| w == b"secret-pass-UNIQUE-MARKER-xyz"));
         // A long, recognizable substring of the RIK (here, all 32 identical bytes
         // 0x42) must not appear as a contiguous run in the bundle. Single-byte
         // coincidences are not a meaningful leak, so we only check the full run.

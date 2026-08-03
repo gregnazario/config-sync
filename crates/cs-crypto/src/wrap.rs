@@ -30,7 +30,13 @@ pub fn wrap_key(key: &[u8; 32], kek: &[u8; 32], aad: &Aad) -> Result<WrappedKey,
     let nonce = XNonce::from_slice(&nonce_bytes);
     let aad_bytes = aad.encode();
     let ct = c
-        .encrypt(nonce, Payload { msg: key, aad: &aad_bytes })
+        .encrypt(
+            nonce,
+            Payload {
+                msg: key,
+                aad: &aad_bytes,
+            },
+        )
         .map_err(|_| CryptoError::AuthFailed)?;
     Ok(WrappedKey {
         nonce: nonce_bytes,
@@ -47,7 +53,13 @@ pub fn unwrap_key(
     let nonce = XNonce::from_slice(&wrapped.nonce);
     let aad_bytes = aad.encode();
     let pt = c
-        .decrypt(nonce, Payload { msg: &wrapped.ct, aad: &aad_bytes })
+        .decrypt(
+            nonce,
+            Payload {
+                msg: &wrapped.ct,
+                aad: &aad_bytes,
+            },
+        )
         .map_err(|_| CryptoError::AuthFailed)?;
     if pt.len() != 32 {
         return Err(CryptoError::KeyLength);

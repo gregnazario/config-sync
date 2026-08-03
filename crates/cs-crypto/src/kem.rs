@@ -89,8 +89,7 @@ pub fn hybrid_decapsulate(
     secrets: &RecipientSecrets,
 ) -> Result<[u8; 32], CryptoError> {
     let pq_ct = mlkem768::Ciphertext::from_bytes(&ct.pq_ct).map_err(|_| CryptoError::Kem)?;
-    let pq_sk =
-        mlkem768::SecretKey::from_bytes(&secrets.kem_pq).map_err(|_| CryptoError::Kem)?;
+    let pq_sk = mlkem768::SecretKey::from_bytes(&secrets.kem_pq).map_err(|_| CryptoError::Kem)?;
     let ss_pq = mlkem768::decapsulate(&pq_ct, &pq_sk);
     let classic_sk = StaticSecret::from(secrets.kem_classic);
     let eph_pk = PublicKey::from(ct.classic_eph);

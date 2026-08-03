@@ -4,9 +4,7 @@
 
 use crate::error::KeysError;
 use crate::SecretStore;
-use cs_crypto::{
-    generate_recipient_keypair, generate_rik, RecipientKeys, RecipientSecrets, Rik,
-};
+use cs_crypto::{generate_recipient_keypair, generate_rik, RecipientKeys, RecipientSecrets, Rik};
 use serde::{Deserialize, Serialize};
 
 pub struct DeviceIdentity {

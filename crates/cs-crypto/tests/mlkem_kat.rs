@@ -23,5 +23,9 @@ fn mlkem768_two_encapsulations_differ() {
     let (pk, _sk) = mlkem768::keypair();
     let (ss1, _) = mlkem768::encapsulate(&pk);
     let (ss2, _) = mlkem768::encapsulate(&pk);
-    assert_ne!(ss1.as_bytes(), ss2.as_bytes(), "each encapsulation is freshly random");
+    assert_ne!(
+        ss1.as_bytes(),
+        ss2.as_bytes(),
+        "each encapsulation is freshly random"
+    );
 }

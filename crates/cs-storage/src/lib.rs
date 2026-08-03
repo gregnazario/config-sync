@@ -73,11 +73,7 @@ mod trait_tests {
                 Err(StorageError::NotFound(n.into()))
             }
         }
-        async fn get_range(
-            &self,
-            _n: &str,
-            _r: Range<u64>,
-        ) -> Result<Bytes, StorageError> {
+        async fn get_range(&self, _n: &str, _r: Range<u64>) -> Result<Bytes, StorageError> {
             Ok(Bytes::new())
         }
         async fn put(

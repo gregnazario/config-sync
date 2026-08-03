@@ -29,13 +29,18 @@ macro_rules! secret_key {
 
         impl std::fmt::Debug for $name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                f.debug_tuple(stringify!($name)).field(&"[secret; 32 bytes]").finish()
+                f.debug_tuple(stringify!($name))
+                    .field(&"[secret; 32 bytes]")
+                    .finish()
             }
         }
     };
 }
 
-secret_key!(Rik, "Root identity key: the user's long-term identity secret.");
+secret_key!(
+    Rik,
+    "Root identity key: the user's long-term identity secret."
+);
 secret_key!(Mk, "Master key: per-vault key that wraps each file's DEK.");
 secret_key!(Dek, "Data encryption key: per-file, used by the AEAD.");
 

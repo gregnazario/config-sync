@@ -15,8 +15,8 @@ pub use aad::Aad;
 pub use envelope::{open, seal, OpenInput, SealOutput, MAGIC, VERSION};
 pub use error::CryptoError;
 pub use kem::{
-    generate_recipient_keypair, hybrid_decapsulate, hybrid_encapsulate, HybridKemCt,
-    RecipientKeys, RecipientSecrets,
+    generate_recipient_keypair, hybrid_decapsulate, hybrid_encapsulate, HybridKemCt, RecipientKeys,
+    RecipientSecrets,
 };
 pub use keys::{generate_dek, generate_mk, generate_rik, Dek, Mk, Rik};
 pub use wrap::{unwrap_key, wrap_key, WrappedKey};

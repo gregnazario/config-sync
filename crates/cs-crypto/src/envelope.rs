@@ -7,7 +7,9 @@
 
 use crate::aad::Aad;
 use crate::error::CryptoError;
-use crate::kem::{hybrid_decapsulate, hybrid_encapsulate, HybridKemCt, RecipientKeys, RecipientSecrets};
+use crate::kem::{
+    hybrid_decapsulate, hybrid_encapsulate, HybridKemCt, RecipientKeys, RecipientSecrets,
+};
 use crate::keys::generate_dek;
 use crate::wrap::{unwrap_key, wrap_key, WrappedKey};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
@@ -40,11 +42,7 @@ fn random_nonce24() -> Result<[u8; 24], CryptoError> {
     Ok(nonce)
 }
 
-pub fn seal(
-    plaintext: &[u8],
-    aad: &Aad,
-    recip: &RecipientKeys,
-) -> Result<SealOutput, CryptoError> {
+pub fn seal(plaintext: &[u8], aad: &Aad, recip: &RecipientKeys) -> Result<SealOutput, CryptoError> {
     let dek = generate_dek();
     let (kek, ct) = hybrid_encapsulate(recip);
     let wrapped_dek = wrap_key(dek.as_bytes(), &kek, aad)?;
@@ -54,7 +52,13 @@ pub fn seal(
     let nonce = XNonce::from_slice(&nonce_bytes);
     let aad_bytes = aad.encode();
     let ct_body = cipher
-        .encrypt(nonce, Payload { msg: plaintext, aad: &aad_bytes })
+        .encrypt(
+            nonce,
+            Payload {
+                msg: plaintext,
+                aad: &aad_bytes,
+            },
+        )
         .map_err(|_| CryptoError::AuthFailed)?;
 
     let hb = HeaderBody {
@@ -105,7 +109,13 @@ pub fn open(
     let nonce = XNonce::from_slice(nonce_bytes);
     let aad_bytes = aad.encode();
     cipher
-        .decrypt(nonce, Payload { msg: ct_body, aad: &aad_bytes })
+        .decrypt(
+            nonce,
+            Payload {
+                msg: ct_body,
+                aad: &aad_bytes,
+            },
+        )
         .map_err(|_| CryptoError::AuthFailed)
 }
 
