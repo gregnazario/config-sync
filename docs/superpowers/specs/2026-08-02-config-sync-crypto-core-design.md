@@ -293,7 +293,8 @@ for defense in depth.
 
 #### 5.4.2 Shamir k-of-n
 
-1. Split RIK into `n` shares, threshold `k`, via the `sharks` crate.
+1. Split RIK into `n` shares, threshold `k`, via the `sharks` crate. Default
+   is `k=2, n=3` (survives loss of one share, requires two to recover).
 2. Default distribution of shares (configurable): mnemonic (one share), a
    trusted contact's ML-KEM-768 pubkey (one share, sealed to it), a local
    device file (one share).
