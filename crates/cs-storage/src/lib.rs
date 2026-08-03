@@ -20,6 +20,9 @@ mod gdrive;
 #[cfg(feature = "proton")]
 mod proton;
 
+#[cfg(feature = "onedrive")]
+mod onedrive;
+
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::ops::Range;
@@ -77,6 +80,9 @@ pub use gdrive::GoogleDriveStore;
 
 #[cfg(feature = "proton")]
 pub use proton::ProtonDriveStore;
+
+#[cfg(feature = "onedrive")]
+pub use onedrive::OneDriveStore;
 
 #[cfg(test)]
 mod trait_tests {
