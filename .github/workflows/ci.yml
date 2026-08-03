@@ -73,10 +73,10 @@ jobs:
         with:
           targets: x86_64-unknown-linux-gnu
           components: clippy, rustfmt
-      - name: Install native build deps (gcc, cmake)
+      - name: Install native build deps (gcc, cmake, dbus for keyring backend)
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential
+          sudo apt-get install -y cmake build-essential pkg-config libdbus-1-dev libclang-dev
       - name: Build
         run: cargo build --workspace --target x86_64-unknown-linux-gnu
       - name: Test (no keyring/biometric — no Secret Service in CI)
@@ -101,5 +101,7 @@ jobs:
           run: |
             cd "$GITHUB_WORKSPACE" 2>/dev/null || cd /root/work/repo 2>/dev/null || cd /root/work
             pwd
-            cargo build --workspace
+            # Build+test the core (liboqs PQ crypto + sync) without the
+            # keyring backend (FreeBSD Secret Service needs a running session).
+            cargo build --workspace --no-default-features --features cs-storage/local-fs
             cargo test --workspace --no-default-features --features cs-storage/local-fs
