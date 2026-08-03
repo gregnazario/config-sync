@@ -26,7 +26,8 @@ config-sync list
 config-sync sync [--non-interactive]
 config-sync recover --provider mnemonic|shamir|cloud
 config-sync doctor
-config-sync --config-dir <dir> <command>   # override the config directory
+config-sync --config-dir <dir> <command>      # override the config directory
+config-sync --no-biometrics <command>         # disable Touch ID gating
 ```
 
 ## Typical first-device workflow

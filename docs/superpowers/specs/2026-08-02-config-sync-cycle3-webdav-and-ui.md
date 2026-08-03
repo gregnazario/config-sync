@@ -59,7 +59,7 @@ Verification:
 | TOML config, per-machine paths, empty fields, conflict policy | ✅ (cycle 1) |
 | Interactive conflict resolution system | ✅ (cycle 3) |
 | Configs versioned, stored versioned | ✅ (cycle 2) |
-| Keychain + biometrics | ⚠️ keychain wired; biometric ACL gating still pending |
+| Keychain + biometrics | ✅ biometric-gated keychain on macOS (Touch ID / Face ID + device passcode); keychain on Windows/Linux/FreeBSD (Windows Hello NGC is a documented future enhancement) |
 | Cross-platform (Mac/Win/Linux/FreeBSD) | ⚠️ macOS build+test verified; others `cargo check` for pure-Rust crates; liboqs needs native C toolchain |
 | CLI/invocable surface | ✅ `cs-cli` binary: init / add / list / sync / recover / doctor |
 
