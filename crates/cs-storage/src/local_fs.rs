@@ -87,11 +87,13 @@ impl RemoteStore for LocalFs {
                     continue;
                 }
                 let meta = fs::metadata(&p).await?;
+                // Logical config paths use forward slashes everywhere; on
+                // Windows the OS separator is '\', so normalize after stripping.
                 let name = p
                     .strip_prefix(&self.root)
                     .unwrap()
                     .to_string_lossy()
-                    .to_string();
+                    .replace('\\', "/");
                 let etag = self.read_etag(&name).await?.unwrap_or(Etag("0".into()));
                 out.push(ObjectMeta {
                     name,
