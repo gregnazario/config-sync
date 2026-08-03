@@ -1,0 +1,39 @@
+[package]
+name = "cs-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "config-sync"
+path = "src/main.rs"
+
+[features]
+default = ["keyring-store", "terminal"]
+# Use the OS keychain for device identity. Off in tests so they use an
+# in-process file-backed secret store.
+keyring-store = ["cs-keys/keyring"]
+# Interactive terminal conflict resolver (dialoguer/console). Off in tests.
+terminal = ["cs-ui/terminal"]
+
+[dependencies]
+cs-crypto = { path = "../cs-crypto" }
+cs-keys = { path = "../cs-keys" }
+cs-config = { path = "../cs-config" }
+cs-manifest = { path = "../cs-manifest" }
+cs-sync = { path = "../cs-sync" }
+cs-storage = { path = "../cs-storage", features = ["local-fs"] }
+cs-ui = { path = "../cs-ui" }
+clap = { version = "4", features = ["derive"] }
+thiserror = { workspace = true }
+serde = { workspace = true }
+toml = "0.8"
+dirs = "5"
+postcard = { version = "1", features = ["alloc"] }
+getrandom = "0.3"
+hex = "0.4"
+tokio = { version = "1", features = ["rt", "macros", "fs"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt"] }

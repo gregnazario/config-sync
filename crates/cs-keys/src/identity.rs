@@ -34,6 +34,18 @@ impl DeviceIdentity {
             recipient_secrets: sk,
         }
     }
+
+    /// Build an identity from a recovered RIK, generating a fresh recipient
+    /// keypair for this device. Used by the recovery flow: the RIK is the
+    /// long-term secret, while each device gets its own recipient keys.
+    pub fn with_rik(rik: Rik) -> Self {
+        let (pk, sk) = generate_recipient_keypair();
+        Self {
+            rik,
+            recipient_keys: pk,
+            recipient_secrets: sk,
+        }
+    }
 }
 
 impl Default for DeviceIdentity {
@@ -58,6 +70,37 @@ pub fn load_identity(store: &dyn SecretStore) -> Result<DeviceIdentity, KeysErro
     let bytes = store.get(ACCOUNT)?;
     let s: StoredIdentity =
         postcard::from_bytes(&bytes).map_err(|e| KeysError::Recovery(e.to_string()))?;
+    Ok(DeviceIdentity {
+        rik: Rik::from_bytes(s.rik),
+        recipient_keys: RecipientKeys {
+            kem_pq: s.kem_pq_pk,
+            kem_classic: s.kem_classic_pk,
+        },
+        recipient_secrets: RecipientSecrets {
+            kem_pq: s.kem_pq_sk,
+            kem_classic: s.kem_classic_sk,
+        },
+    })
+}
+
+/// Serialize a device identity to portable postcard bytes (the same format
+/// [`store_identity`] uses internally). Lets callers (e.g. the CLI) move an
+/// identity between stores or files without going through `SecretStore`.
+pub fn identity_to_bytes(id: &DeviceIdentity) -> Result<Vec<u8>, KeysError> {
+    let s = StoredIdentity {
+        rik: *id.rik.as_bytes(),
+        kem_pq_pk: id.recipient_keys.kem_pq.clone(),
+        kem_pq_sk: id.recipient_secrets.kem_pq.clone(),
+        kem_classic_pk: id.recipient_keys.kem_classic,
+        kem_classic_sk: id.recipient_secrets.kem_classic,
+    };
+    postcard::to_allocvec(&s).map_err(|e| KeysError::Recovery(e.to_string()))
+}
+
+/// Inverse of [`identity_to_bytes`].
+pub fn load_identity_from_bytes(bytes: &[u8]) -> Result<DeviceIdentity, KeysError> {
+    let s: StoredIdentity =
+        postcard::from_bytes(bytes).map_err(|e| KeysError::Recovery(e.to_string()))?;
     Ok(DeviceIdentity {
         rik: Rik::from_bytes(s.rik),
         recipient_keys: RecipientKeys {

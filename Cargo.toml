@@ -8,6 +8,7 @@ members = [
     "crates/cs-manifest",
     "crates/cs-sync",
     "crates/cs-ui",
+    "crates/cs-cli",
     "crates/cs-integration-tests",
 ]
 

@@ -11,7 +11,9 @@ mod secret_store;
 mod keyring_store;
 
 pub use error::KeysError;
-pub use identity::{load_identity, store_identity, DeviceIdentity};
+pub use identity::{
+    identity_to_bytes, load_identity, load_identity_from_bytes, store_identity, DeviceIdentity,
+};
 pub use recovery::{
     CloudBundleProvider, MnemonicProvider, RecoveryBundle, RecoveryKind, RecoveryProvider,
     ShamirProvider,
