@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 thiserror = { workspace = true }
 zeroize = { workspace = true }
+serde = { workspace = true }
