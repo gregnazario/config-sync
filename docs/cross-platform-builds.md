@@ -9,10 +9,20 @@ succeeds on each platform.
 | Crate | macOS (aarch64) | Windows (MSVC) | Linux (glibc) | FreeBSD |
 |---|:---:|:---:|:---:|:---:|
 | `cs-config` | ✅ host | ✅ check | ✅ check | ✅ check |
-| `cs-storage` | ✅ host | ✅ check | ✅ check | ✅ check |
+| `cs-storage` (default features) | ✅ host | ✅ check | ✅ check | ✅ check |
+| `cs-manifest` (pure Rust, no C deps) | ✅ host | ✅ check | ✅ check | ✅ check |
+| `cs-sync` (depends on cs-crypto via cs-storage only at type level; pure-Rust logic) | ✅ host | (see cs-crypto) | (see cs-crypto) | (see cs-crypto) |
 | `cs-keys` (default features) | ✅ host | ⛔ liboqs | ⛔ liboqs | ⛔ liboqs |
 | `cs-keys` (`--features keyring`) | ✅ apple-native | (native build) | (native build) | (native build) |
 | `cs-crypto` | ✅ host + tests | ⛔ liboqs | ⛔ liboqs | ⛔ liboqs |
+| `cs-storage` (`--features s3`) | (native build) | (native build) | (native build) | (native build) |
+
+> **Cycle 2 additions:** `cs-manifest` is pure Rust (serde/postcard/sha2) and
+> type-checks on all four platforms. `cs-sync`'s logic is pure Rust; its only
+> non-Rust transitive dependency is the same `pqcrypto`/liboqs pulled through
+> `cs-crypto`, so its cross-build status mirrors `cs-crypto`. The `s3` backend
+> (aws-sdk-s3) is an additive Cargo feature; without it the AWS SDK is not
+> compiled into the binary at all.
 
 Legend:
 - ✅ **host** — built and unit-tested on the host platform.
