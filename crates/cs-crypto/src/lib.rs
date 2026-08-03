@@ -5,12 +5,14 @@
 #![forbid(unsafe_code)]
 
 mod aad;
+mod envelope;
 mod error;
 mod kem;
 mod keys;
 mod wrap;
 
 pub use aad::Aad;
+pub use envelope::{open, seal, OpenInput, SealOutput, MAGIC, VERSION};
 pub use error::CryptoError;
 pub use kem::{
     generate_recipient_keypair, hybrid_decapsulate, hybrid_encapsulate, HybridKemCt,
