@@ -14,6 +14,9 @@ mod s3;
 #[cfg(feature = "webdav")]
 mod webdav;
 
+#[cfg(feature = "gdrive")]
+mod gdrive;
+
 use async_trait::async_trait;
 use bytes::Bytes;
 use std::ops::Range;
@@ -65,6 +68,9 @@ pub use s3::S3Store;
 
 #[cfg(feature = "webdav")]
 pub use webdav::WebDavStore;
+
+#[cfg(feature = "gdrive")]
+pub use gdrive::GoogleDriveStore;
 
 #[cfg(test)]
 mod trait_tests {

@@ -9,6 +9,7 @@ default = ["local-fs"]
 local-fs = []
 s3 = ["dep:aws-sdk-s3", "dep:aws-config"]
 webdav = ["dep:reqwest"]
+gdrive = ["dep:reqwest", "dep:serde", "dep:serde_json"]
 
 [dependencies]
 async-trait = "0.1"
@@ -19,7 +20,11 @@ aws-sdk-s3 = { version = "1", optional = true }
 aws-config = { version = "1", optional = true }
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
+    "json",
+    "multipart",
 ], optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { version = "1", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
@@ -27,3 +32,5 @@ hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"
 tokio = { version = "1", features = ["net", "rt-multi-thread"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
