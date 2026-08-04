@@ -1,3 +1,4 @@
+use subtle::ConstantTimeEq;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 macro_rules! secret_key {
@@ -21,8 +22,8 @@ macro_rules! secret_key {
 
         impl PartialEq for $name {
             fn eq(&self, other: &Self) -> bool {
-                // constant-time comparison
-                fixed_eq(&self.0, &other.0)
+                // Constant-time comparison via the vetted subtle crate.
+                self.0.ct_eq(&other.0).into()
             }
         }
         impl Eq for $name {}
@@ -43,14 +44,6 @@ secret_key!(
 );
 secret_key!(Mk, "Master key: per-vault key that wraps each file's DEK.");
 secret_key!(Dek, "Data encryption key: per-file, used by the AEAD.");
-
-fn fixed_eq(a: &[u8; 32], b: &[u8; 32]) -> bool {
-    let mut diff: u8 = 0;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
-}
 
 /// Generate a fresh random 32-byte secret using the OS CSPRNG.
 fn random_32() -> Result<[u8; 32], crate::CryptoError> {

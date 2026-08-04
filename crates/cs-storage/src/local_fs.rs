@@ -12,11 +12,17 @@ use tokio::fs;
 
 pub struct LocalFs {
     pub root: PathBuf,
+    /// Per-instance lock ensuring the check→write→bump sequence in `put` is
+    /// atomic, preventing races on shared/network-mounted stores.
+    put_lock: tokio::sync::Mutex<()>,
 }
 
 impl LocalFs {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self {
+            root: root.into(),
+            put_lock: tokio::sync::Mutex::new(()),
+        }
     }
 
     fn obj_path(&self, name: &str) -> Result<PathBuf, StorageError> {
@@ -142,14 +148,15 @@ impl RemoteStore for LocalFs {
         data: Bytes,
         if_match: Option<&Etag>,
     ) -> Result<Etag, StorageError> {
+        // Hold the per-instance lock across check→write→bump to prevent
+        // races on shared/network-mounted stores.
+        let _guard = self.put_lock.lock().await;
+
         if let Some(want) = if_match {
             match self.read_etag(name).await? {
-                Some(have) if have.0 == want.0 => { /* ok, proceed */ }
+                Some(have) if have.0 == want.0 => {}
                 Some(_) => return Err(StorageError::PreconditionFailed),
                 None => {
-                    // Object does not exist yet; a precondition can only be
-                    // satisfied if the caller asked for "absent" semantics, which
-                    // we represent as an empty expected etag.
                     if !want.0.is_empty() {
                         return Err(StorageError::PreconditionFailed);
                     }

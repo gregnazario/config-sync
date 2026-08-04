@@ -220,6 +220,31 @@ async fn sync_inner(
                             local.entries.insert(path.clone(), r.clone());
                             report.pulled.push(path.clone());
                         } else {
+                            // Chosen is local. If the policy was Manual (KeepBoth),
+                            // also fetch and write the remote version as a .remote
+                            // sidecar so the user can review/merge manually.
+                            if mf.policy == ConflictPolicy::Manual {
+                                let id_hex = r.blob_id.to_hex();
+                                let hdr = store.get(&blob_key(&id_hex)).await?;
+                                let body = store.get(&blob_body_key(&id_hex)).await?;
+                                let remote_pt =
+                                    open_sealed(&hdr, &body, path, r, inputs.recip_secrets)?;
+                                let remote_path = {
+                                    let mut p = mf.disk_path.clone();
+                                    let ext = p
+                                        .extension()
+                                        .map(|e| {
+                                            let mut s = e.to_string_lossy().into_owned();
+                                            s.push_str(".remote");
+                                            s
+                                        })
+                                        .unwrap_or_else(|| "remote".to_string());
+                                    p.set_extension(ext);
+                                    p
+                                };
+                                write_plaintext(&remote_path, &remote_pt)?;
+                            }
+
                             let mut clk = l.clock.clone();
                             clk.merge(&r.clock);
                             clk.bump(inputs.device);
