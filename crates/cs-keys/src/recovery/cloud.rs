@@ -112,15 +112,17 @@ impl CloudBundleProvider {
             self.argon_parallelism,
         )?;
         let cipher = XChaCha20Poly1305::new(Key::from_slice(&*kek));
-        let pt = cipher
-            .decrypt(
-                XNonce::from_slice(&p.nonce),
-                Payload {
-                    msg: &p.ct,
-                    aad: &[],
-                },
-            )
-            .map_err(|_| KeysError::Crypto(cs_crypto::CryptoError::AuthFailed))?;
+        let pt = zeroize::Zeroizing::new(
+            cipher
+                .decrypt(
+                    XNonce::from_slice(&p.nonce),
+                    Payload {
+                        msg: &p.ct,
+                        aad: &[],
+                    },
+                )
+                .map_err(|_| KeysError::Crypto(cs_crypto::CryptoError::AuthFailed))?,
+        );
         let mut out = [0u8; 32];
         out.copy_from_slice(&pt);
         Ok(out)

@@ -52,15 +52,16 @@ pub fn unwrap_key(
     let c = cipher(kek);
     let nonce = XNonce::from_slice(&wrapped.nonce);
     let aad_bytes = aad.encode();
-    let pt = c
-        .decrypt(
+    let pt = zeroize::Zeroizing::new(
+        c.decrypt(
             nonce,
             Payload {
                 msg: &wrapped.ct,
                 aad: &aad_bytes,
             },
         )
-        .map_err(|_| CryptoError::AuthFailed)?;
+        .map_err(|_| CryptoError::AuthFailed)?,
+    );
     if pt.len() != 32 {
         return Err(CryptoError::KeyLength);
     }

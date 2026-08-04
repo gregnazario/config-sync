@@ -13,7 +13,7 @@ pub struct DeviceIdentity {
     pub recipient_secrets: RecipientSecrets,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
 struct StoredIdentity {
     rik: [u8; 32],
     kem_pq_pk: Vec<u8>,
@@ -67,11 +67,11 @@ pub fn load_identity(store: &dyn SecretStore) -> Result<DeviceIdentity, KeysErro
     Ok(DeviceIdentity {
         rik: Rik::from_bytes(s.rik),
         recipient_keys: RecipientKeys {
-            kem_pq: s.kem_pq_pk,
+            kem_pq: s.kem_pq_pk.clone(),
             kem_classic: s.kem_classic_pk,
         },
         recipient_secrets: RecipientSecrets {
-            kem_pq: s.kem_pq_sk,
+            kem_pq: s.kem_pq_sk.clone(),
             kem_classic: s.kem_classic_sk,
         },
     })
@@ -98,11 +98,11 @@ pub fn load_identity_from_bytes(bytes: &[u8]) -> Result<DeviceIdentity, KeysErro
     Ok(DeviceIdentity {
         rik: Rik::from_bytes(s.rik),
         recipient_keys: RecipientKeys {
-            kem_pq: s.kem_pq_pk,
+            kem_pq: s.kem_pq_pk.clone(),
             kem_classic: s.kem_classic_pk,
         },
         recipient_secrets: RecipientSecrets {
-            kem_pq: s.kem_pq_sk,
+            kem_pq: s.kem_pq_sk.clone(),
             kem_classic: s.kem_classic_sk,
         },
     })

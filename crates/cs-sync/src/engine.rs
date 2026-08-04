@@ -204,6 +204,7 @@ async fn sync_inner(
                     local.manifest_version + 1,
                     inputs.now,
                 )?;
+                let res_for_record = res.clone();
                 match res {
                     Resolution::Aborted => {
                         aborted = true;
@@ -267,6 +268,12 @@ async fn sync_inner(
                             conflict_pushes.push(path.clone());
                         }
                         report.conflicts_resolved.push(path.clone());
+                        // Record the resolution so other devices converge.
+                        if let Some(record) =
+                            crate::conflict::make_record(&res_for_record, local.manifest_version)
+                        {
+                            local.resolutions.insert(path.clone(), record);
+                        }
                     }
                 }
             }
@@ -291,17 +298,31 @@ async fn sync_inner(
             remote_etag.clone()
         } else {
             // Re-fetch remote and re-diff to detect concurrent changes to
-            // existing paths (not just new ones).
+            // existing paths. Apply pulls/deletions fully (fetch blobs, write
+            // to disk) so the local state matches the manifest we're about to push.
             let (remote, etag) = fetch_remote_manifest(store).await?;
             let retry_ops = diff(local, &remote);
             for op in &retry_ops {
                 match op {
                     DiffOp::PullLocal { path, remote } => {
-                        // Remote has a newer version of an existing path.
-                        // Fast-forward our local to match.
+                        if let Some(mf) = file_map.get(path) {
+                            let id_hex = remote.blob_id.to_hex();
+                            if let Ok(hdr) = store.get(&blob_key(&id_hex)).await {
+                                if let Ok(body) = store.get(&blob_body_key(&id_hex)).await {
+                                    if let Ok(pt) =
+                                        open_sealed(&hdr, &body, path, remote, inputs.recip_secrets)
+                                    {
+                                        let _ = write_plaintext(&mf.disk_path, &pt);
+                                    }
+                                }
+                            }
+                        }
                         local.entries.insert(path.clone(), remote.clone());
                     }
                     DiffOp::PullDeletion { path, .. } => {
+                        if let Some(mf) = file_map.get(path) {
+                            let _ = std::fs::remove_file(&mf.disk_path);
+                        }
                         local.entries.remove(path);
                     }
                     DiffOp::InSync { .. }
@@ -390,7 +411,7 @@ fn scan_local(
                 let mut clk = local.clock.clone();
                 clk.bump(inputs.device);
                 let aad_version = 1;
-                let (mut entry, sf) = seal_plaintext(
+                let (entry, sf) = seal_plaintext(
                     &plain,
                     &mf.logical,
                     aad_version,
@@ -398,7 +419,6 @@ fn scan_local(
                     inputs.recip_keys,
                     mtime,
                 )?;
-                entry.clock.bump(inputs.device);
                 local.entries.insert(mf.logical.clone(), entry.clone());
                 staged.push(PendingPush {
                     path: mf.logical.clone(),

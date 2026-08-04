@@ -9,6 +9,7 @@ use pqcrypto_mlkem::mlkem768;
 use pqcrypto_traits::kem::{Ciphertext as _, PublicKey as _, SecretKey as _, SharedSecret as _};
 use sha2::Sha256;
 use x25519_dalek::{PublicKey, StaticSecret};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// A recipient's public material: an ML-KEM-768 public key and an X25519
 /// public key.
@@ -18,7 +19,8 @@ pub struct RecipientKeys {
 }
 
 /// A recipient's secret material: an ML-KEM-768 secret key and an X25519
-/// static secret (32 bytes).
+/// static secret (32 bytes). Zeroized on drop.
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct RecipientSecrets {
     pub kem_pq: Vec<u8>,
     pub kem_classic: [u8; 32],

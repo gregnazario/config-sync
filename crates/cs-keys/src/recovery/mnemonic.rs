@@ -146,15 +146,17 @@ impl MnemonicProvider {
             self.argon_parallelism,
         )?;
         let cipher = XChaCha20Poly1305::new(Key::from_slice(&*kek));
-        let pt = cipher
-            .decrypt(
-                XNonce::from_slice(&p.nonce),
-                Payload {
-                    msg: &p.ct,
-                    aad: &[],
-                },
-            )
-            .map_err(|_| KeysError::Crypto(cs_crypto::CryptoError::AuthFailed))?;
+        let pt = zeroize::Zeroizing::new(
+            cipher
+                .decrypt(
+                    XNonce::from_slice(&p.nonce),
+                    Payload {
+                        msg: &p.ct,
+                        aad: &[],
+                    },
+                )
+                .map_err(|_| KeysError::Crypto(cs_crypto::CryptoError::AuthFailed))?,
+        );
         let mut out = [0u8; 32];
         out.copy_from_slice(&pt);
         Ok(out)
@@ -171,8 +173,11 @@ impl RecoveryProvider for MnemonicProvider {
     /// point because the trait cannot return it. Use
     /// [`MnemonicProvider::seal_with_mnemonic`] in production so the mnemonic
     /// can be displayed to the user.
-    fn seal(&self, rik: &[u8; 32]) -> Result<RecoveryBundle, KeysError> {
-        Ok(self.seal_with_mnemonic(rik, None)?.bundle)
+    fn seal(&self, _rik: &[u8; 32]) -> Result<RecoveryBundle, KeysError> {
+        Err(KeysError::Recovery(
+            "MnemonicProvider::seal would discard the generated mnemonic; use seal_with_mnemonic"
+                .into(),
+        ))
     }
 
     fn recover(&self, _bundle: &RecoveryBundle) -> Result<[u8; 32], KeysError> {
