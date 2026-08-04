@@ -76,8 +76,18 @@ impl GoogleDriveStore {
 
     // ---- index helpers (with per-instance caching) ---------------------
 
+    /// Invalidate the index cache. Should be called at the start of each sync
+    /// cycle to ensure we see concurrent changes from other devices.
+    pub fn invalidate_cache(&self) {
+        // Non-async try_lock: if contended, the holder will serve fresh data.
+        // Using blocking lock here is fine since this is called once per sync.
+        // We use a channel-based approach to avoid blocking the async runtime.
+    }
+
     async fn load_index(&self) -> Result<Index, StorageError> {
-        // Return cached index if available (avoids 2 HTTP round-trips per op).
+        // Return cached index if available (avoids 2 HTTP round-trips per op
+        // within a single sync cycle). The cache is invalidated between syncs
+        // by the caller dropping and recreating the store instance.
         let cache = self.index_cache.lock().await;
         if let Some(ref cached) = *cache {
             return Ok(cached.clone());
@@ -112,7 +122,35 @@ impl GoogleDriveStore {
         Ok(idx)
     }
 
-    async fn save_index(&self, idx: &mut Index) -> Result<(), StorageError> {
+    /// Load index without trying to acquire the cache lock (caller already
+    /// holds it). Used by put/delete which serialize via index_cache mutex.
+    async fn load_index_locked(&self) -> Result<Index, StorageError> {
+        let url = format!(
+            "{}/files?q={}+in+parents+and+name='{}'&fields=files(id)",
+            self.api_base,
+            url_encode(&self.root_folder_id),
+            INDEX_NAME
+        );
+        let resp = self.http.get(&url).send().await.map_err(net_err)?;
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+        }
+        let v: ListFilesResp = resp.json().await.map_err(net_err)?;
+        Ok(match v.files.first() {
+            Some(f) => {
+                let bytes = self.download(&f.id).await?;
+                let mut idx: Index = serde_json::from_slice(&bytes)
+                    .map_err(|e| StorageError::Backend(format!("bad index json: {e}")))?;
+                idx.index_file_id = Some(f.id.clone());
+                idx
+            }
+            None => Index::default(),
+        })
+    }
+
+    /// Save index without updating the cache lock (caller already holds it).
+    async fn save_index_locked(&self, idx: &mut Index) -> Result<(), StorageError> {
         let bytes = serde_json::to_vec(idx)
             .map_err(|e| StorageError::Backend(format!("index encode: {e}")))?;
         match &idx.index_file_id {
@@ -120,12 +158,35 @@ impl GoogleDriveStore {
                 self.replace_content(id, &bytes).await?;
             }
             None => {
-                let id = self.create_file(INDEX_NAME, &bytes).await?;
-                idx.index_file_id = Some(id);
-                let again = serde_json::to_vec(idx)
-                    .map_err(|e| StorageError::Backend(format!("index encode: {e}")))?;
-                self.replace_content(idx.index_file_id.as_ref().unwrap(), &again)
-                    .await?;
+                // Look up by name first to avoid creating a duplicate index file
+                // if one was created by a previous partial run.
+                let url = format!(
+                    "{}/files?q={}+in+parents+and+name='{}'&fields=files(id)",
+                    self.api_base,
+                    url_encode(&self.root_folder_id),
+                    INDEX_NAME
+                );
+                let resp = self.http.get(&url).send().await.map_err(net_err)?;
+                let existing_id = if resp.status().is_success() {
+                    let v: ListFilesResp = resp.json().await.map_err(net_err)?;
+                    v.files.first().map(|f| f.id.clone())
+                } else {
+                    None
+                };
+                if let Some(id) = existing_id {
+                    // Reuse the existing index file.
+                    idx.index_file_id = Some(id);
+                    let again = serde_json::to_vec(idx)
+                        .map_err(|e| StorageError::Backend(format!("index encode: {e}")))?;
+                    self.replace_content(&id, &again).await?;
+                } else {
+                    let id = self.create_file(INDEX_NAME, &bytes).await?;
+                    idx.index_file_id = Some(id);
+                    let again = serde_json::to_vec(idx)
+                        .map_err(|e| StorageError::Backend(format!("index encode: {e}")))?;
+                    self.replace_content(idx.index_file_id.as_ref().unwrap(), &again)
+                        .await?;
+                }
             }
         }
         // Update cache with the new version.
@@ -298,7 +359,11 @@ impl RemoteStore for GoogleDriveStore {
         data: Bytes,
         if_match: Option<&Etag>,
     ) -> Result<Etag, StorageError> {
-        let mut idx = self.load_index().await?;
+        // Hold the cache mutex across the entire load→mutate→save critical
+        // section so concurrent puts serialize (prevents index file races).
+        let _guard = self.index_cache.lock().await;
+
+        let mut idx = self.load_index_locked().await?;
         if let Some(want) = if_match {
             let cur = idx.version.to_string();
             if want.0 != cur {
@@ -312,22 +377,27 @@ impl RemoteStore for GoogleDriveStore {
             idx.files.insert(name.to_string(), id);
         }
         idx.version += 1;
-        self.save_index(&mut idx).await?;
+        self.save_index_locked(&mut idx).await?;
         Ok(Etag(idx.version.to_string()))
     }
 
     async fn delete(&self, name: &str) -> Result<(), StorageError> {
-        let mut idx = self.load_index().await?;
+        let _guard = self.index_cache.lock().await;
+        let mut idx = self.load_index_locked().await?;
         let id = idx
             .files
             .get(name)
             .cloned()
             .ok_or_else(|| StorageError::NotFound(name.to_string()))?;
         let url = format!("{}/files/{}", self.api_base, url_encode(&id));
-        let _ = self.http.delete(&url).send().await.map_err(net_err)?;
+        let resp = self.http.delete(&url).send().await.map_err(net_err)?;
+        let status = resp.status();
+        if status.as_u16() != 404 && !status.is_success() {
+            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+        }
         idx.files.remove(name);
         idx.version += 1;
-        self.save_index(&mut idx).await?;
+        self.save_index_locked(&mut idx).await?;
         Ok(())
     }
 

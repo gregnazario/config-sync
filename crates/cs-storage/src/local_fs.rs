@@ -19,12 +19,21 @@ impl LocalFs {
         Self { root: root.into() }
     }
 
-    fn obj_path(&self, name: &str) -> PathBuf {
-        self.root.join(name)
+    fn obj_path(&self, name: &str) -> Result<PathBuf, StorageError> {
+        let p = self.root.join(name);
+        // Defense against path traversal: reject names containing "..".
+        if p.components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err(StorageError::Backend(format!(
+                "path escapes store root: {name}"
+            )));
+        }
+        Ok(p)
     }
 
-    fn ver_path(&self, name: &str) -> PathBuf {
-        let mut p = self.obj_path(name);
+    fn ver_path(&self, name: &str) -> Result<PathBuf, StorageError> {
+        let mut p = self.obj_path(name)?;
         let mut new_ext = p
             .extension()
             .map(|e| {
@@ -38,11 +47,11 @@ impl LocalFs {
             new_ext = "version".to_string();
         }
         p.set_extension(new_ext);
-        p
+        Ok(p)
     }
 
     async fn read_etag(&self, name: &str) -> Result<Option<Etag>, StorageError> {
-        match fs::read_to_string(self.ver_path(name)).await {
+        match fs::read_to_string(self.ver_path(name)?).await {
             Ok(s) => Ok(Some(Etag(s.trim().to_string()))),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(e) => Err(e.into()),
@@ -56,7 +65,7 @@ impl LocalFs {
             .map(|e| e.0.parse::<u64>().unwrap_or(0))
             .unwrap_or(0);
         let next = cur + 1;
-        fs::write(self.ver_path(name), next.to_string()).await?;
+        fs::write(self.ver_path(name)?, next.to_string()).await?;
         Ok(Etag(next.to_string()))
     }
 }
@@ -107,7 +116,8 @@ impl RemoteStore for LocalFs {
     }
 
     async fn get(&self, name: &str) -> Result<Bytes, StorageError> {
-        match fs::read(self.obj_path(name)).await {
+        let path = self.obj_path(name)?;
+        match fs::read(path).await {
             Ok(b) => Ok(Bytes::from(b)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 Err(StorageError::NotFound(name.into()))
@@ -117,7 +127,7 @@ impl RemoteStore for LocalFs {
     }
 
     async fn get_range(&self, name: &str, range: Range<u64>) -> Result<Bytes, StorageError> {
-        let b = fs::read(self.obj_path(name)).await?;
+        let b = fs::read(self.obj_path(name)?).await?;
         let start = range.start as usize;
         let end = std::cmp::min(range.end as usize, b.len());
         if start > end {
@@ -146,7 +156,7 @@ impl RemoteStore for LocalFs {
                 }
             }
         }
-        let p = self.obj_path(name);
+        let p = self.obj_path(name)?;
         if let Some(parent) = p.parent() {
             fs::create_dir_all(parent).await?;
         }
@@ -155,8 +165,10 @@ impl RemoteStore for LocalFs {
     }
 
     async fn delete(&self, name: &str) -> Result<(), StorageError> {
-        let _ = fs::remove_file(self.ver_path(name)).await;
-        match fs::remove_file(self.obj_path(name)).await {
+        if let Ok(vp) = self.ver_path(name) {
+            let _ = fs::remove_file(vp).await;
+        }
+        match fs::remove_file(self.obj_path(name)?).await {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 Err(StorageError::NotFound(name.into()))

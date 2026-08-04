@@ -9,7 +9,7 @@ use bytes::Bytes;
 use cs_config::ConflictPolicy;
 use cs_crypto::{RecipientKeys, RecipientSecrets};
 use cs_manifest::{ConfigPath, DeviceId, Entry, Manifest};
-use cs_storage::RemoteStore;
+use cs_storage::{Etag, RemoteStore};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -63,10 +63,24 @@ fn blob_body_key(id_hex: &str) -> String {
     format!("{BLOB_PREFIX}{id_hex}.body")
 }
 
-async fn fetch_remote_manifest(store: &dyn RemoteStore) -> Result<Manifest, SyncError> {
+async fn fetch_remote_manifest(
+    store: &dyn RemoteStore,
+) -> Result<(Manifest, Option<Etag>), SyncError> {
+    // Get the etag from list (the store's own version, not the manifest's
+    // internal version field).
+    let etag = store
+        .list("")
+        .await?
+        .into_iter()
+        .find(|m| m.name == MANIFEST_KEY)
+        .map(|m| m.etag);
+
     match store.get(MANIFEST_KEY).await {
-        Ok(bytes) => Manifest::from_bytes(&bytes).map_err(|e| SyncError::Manifest(e.to_string())),
-        Err(cs_storage::StorageError::NotFound(_)) => Ok(Manifest::new("remote")),
+        Ok(bytes) => {
+            let m = Manifest::from_bytes(&bytes).map_err(|e| SyncError::Manifest(e.to_string()))?;
+            Ok((m, etag))
+        }
+        Err(cs_storage::StorageError::NotFound(_)) => Ok((Manifest::new("remote"), None)),
         Err(e) => Err(e.into()),
     }
 }
@@ -118,7 +132,8 @@ async fn sync_inner(
         inputs.files.iter().map(|f| (&f.logical, f)).collect();
 
     // Phase 1: pull remote changes and resolve conflicts.
-    let ops = diff(local, &fetch_remote_manifest(store).await?);
+    let (remote_manifest, remote_etag) = fetch_remote_manifest(store).await?;
+    let ops = diff(local, &remote_manifest);
 
     // Separate independent pull ops (can be parallelized) from sequential ops.
     let pull_ops: Vec<(&cs_manifest::ConfigPath, &Entry)> = ops
@@ -247,22 +262,27 @@ async fn sync_inner(
     local.device_id = inputs.device.as_str().to_string();
 
     for attempt in 0..MAX_CAS_RETRIES {
-        // Re-fetch remote to detect concurrent changes before our put.
-        if attempt > 0 {
-            let remote = fetch_remote_manifest(store).await?;
-            // Merge any remote-only entries we missed.
+        let current_etag = if attempt == 0 {
+            remote_etag.clone()
+        } else {
+            // Re-fetch remote to detect concurrent changes before our put.
+            let (remote, etag) = fetch_remote_manifest(store).await?;
             for (path, entry) in &remote.entries {
                 if !local.entries.contains_key(path) {
                     local.entries.insert(path.clone(), entry.clone());
                 }
             }
-        }
+            etag
+        };
 
         let bytes = local
             .to_bytes()
             .map_err(|e| SyncError::Manifest(e.to_string()))?;
 
-        match store.put(MANIFEST_KEY, Bytes::from(bytes), None).await {
+        match store
+            .put(MANIFEST_KEY, Bytes::from(bytes), current_etag.as_ref())
+            .await
+        {
             Ok(_etag) => return Ok(report),
             Err(cs_storage::StorageError::PreconditionFailed) if attempt + 1 < MAX_CAS_RETRIES => {
                 continue;
@@ -282,11 +302,18 @@ fn scan_local(
 ) -> Result<Vec<PendingPush>, SyncError> {
     let mut staged = Vec::new();
     for mf in inputs.files {
-        let on_disk = std::fs::read(&mf.disk_path).ok();
-        let mtime = std::fs::metadata(&mf.disk_path)
-            .ok()
-            .and_then(|m| m.modified().ok())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        // Distinguish NotFound (genuine deletion → tombstone) from other IO
+        // errors (transient failures → propagate, don't tombstone).
+        let on_disk = match std::fs::read(&mf.disk_path) {
+            Ok(b) => Some(b),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(SyncError::Io(e)),
+        };
+        let mtime = match std::fs::metadata(&mf.disk_path) {
+            Ok(m) => m.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::time::SystemTime::UNIX_EPOCH,
+            Err(e) => return Err(SyncError::Io(e)),
+        };
         let existing = local.entries.get(&mf.logical).cloned();
         match (on_disk, existing) {
             (Some(plain), Some(prev)) => {

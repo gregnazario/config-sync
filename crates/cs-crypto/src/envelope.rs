@@ -115,7 +115,7 @@ pub fn open(
         classic_eph: hb.classic_eph,
     };
     let kek = hybrid_decapsulate(&kem_ct, secrets)?;
-    let dek = unwrap_key(&hb.wrapped_dek, &kek, aad)?;
+    let dek = zeroize::Zeroizing::new(unwrap_key(&hb.wrapped_dek, &kek, aad)?);
 
     // Reconstruct the same header-bound AAD used during sealing.
     let header_hash = {
@@ -126,7 +126,7 @@ pub fn open(
     let mut body_aad = aad.encode();
     body_aad.extend_from_slice(&header_hash);
 
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(&dek));
+    let cipher = XChaCha20Poly1305::new(Key::from_slice(&*dek));
     let nonce = XNonce::from_slice(nonce_bytes);
     cipher
         .decrypt(
