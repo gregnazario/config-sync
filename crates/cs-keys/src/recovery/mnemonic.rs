@@ -81,10 +81,19 @@ impl MnemonicProvider {
     /// Generate a fresh 24-word BIP-39 mnemonic, derive its recovery key, and
     /// seal the RIK to it. The mnemonic is returned for the user to transcribe;
     /// it is never stored in the bundle.
-    pub fn seal_with_mnemonic(&self, rik: &[u8; 32]) -> Result<SealedWithMnemonic, KeysError> {
+    ///
+    /// If `passphrase` is `Some`, it is used as the BIP-39 passphrase (second
+    /// factor), providing an additional layer of security: an attacker who
+    /// obtains the mnemonic words still cannot derive the key without the
+    /// passphrase. The passphrase is never stored.
+    pub fn seal_with_mnemonic(
+        &self,
+        rik: &[u8; 32],
+        passphrase: Option<&str>,
+    ) -> Result<SealedWithMnemonic, KeysError> {
         let mnemonic =
             bip39::Mnemonic::generate(24).map_err(|e| KeysError::Recovery(e.to_string()))?;
-        let recovery_key = mnemonic.to_seed("");
+        let recovery_key = mnemonic.to_seed(passphrase.unwrap_or(""));
         let mut salt = [0u8; 16];
         getrandom::fill(&mut salt).map_err(|e| KeysError::Recovery(e.to_string()))?;
         let bundle = self.seal_with_recovery_key(rik, &recovery_key, &salt)?;
@@ -127,16 +136,21 @@ impl MnemonicProvider {
     }
 
     /// Recover the RIK from a bundle using the user's transcribed mnemonic words.
+    ///
+    /// If `passphrase` is `Some`, it must match the passphrase used during
+    /// `seal_with_mnemonic`. An empty passphrase (`None` or `Some("")`) is
+    /// used if no second factor was set.
     pub fn recover_with_mnemonic(
         &self,
         bundle: &RecoveryBundle,
         mnemonic_words: &str,
+        passphrase: Option<&str>,
     ) -> Result<[u8; 32], KeysError> {
         let p: MnemonicPayload = postcard::from_bytes(&bundle.payload)
             .map_err(|e| KeysError::Recovery(e.to_string()))?;
         let mnemonic = bip39::Mnemonic::parse_normalized(mnemonic_words)
             .map_err(|e| KeysError::Recovery(e.to_string()))?;
-        let recovery_key = mnemonic.to_seed("");
+        let recovery_key = mnemonic.to_seed(passphrase.unwrap_or(""));
         let kek = Self::derive_kek(
             &recovery_key,
             &p.salt,
@@ -171,7 +185,7 @@ impl RecoveryProvider for MnemonicProvider {
     /// [`MnemonicProvider::seal_with_mnemonic`] in production so the mnemonic
     /// can be displayed to the user.
     fn seal(&self, rik: &[u8; 32]) -> Result<RecoveryBundle, KeysError> {
-        Ok(self.seal_with_mnemonic(rik)?.bundle)
+        Ok(self.seal_with_mnemonic(rik, None)?.bundle)
     }
 
     fn recover(&self, _bundle: &RecoveryBundle) -> Result<[u8; 32], KeysError> {
@@ -190,11 +204,11 @@ mod tests {
     fn seal_with_mnemonic_then_recover_round_trips() {
         let p = MnemonicProvider::fast_for_tests();
         let rik = [7u8; 32];
-        let sealed = p.seal_with_mnemonic(&rik).unwrap();
+        let sealed = p.seal_with_mnemonic(&rik, None).unwrap();
         // The mnemonic is genuinely 24 words.
         assert_eq!(sealed.mnemonic_words.split_whitespace().count(), 24);
         let got = p
-            .recover_with_mnemonic(&sealed.bundle, &sealed.mnemonic_words)
+            .recover_with_mnemonic(&sealed.bundle, &sealed.mnemonic_words, None)
             .unwrap();
         assert_eq!(got, rik);
     }
@@ -203,18 +217,18 @@ mod tests {
     fn wrong_mnemonic_fails_recovery() {
         let p = MnemonicProvider::fast_for_tests();
         let rik = [7u8; 32];
-        let sealed_a = p.seal_with_mnemonic(&rik).unwrap();
-        let sealed_b = p.seal_with_mnemonic(&rik).unwrap();
+        let sealed_a = p.seal_with_mnemonic(&rik, None).unwrap();
+        let sealed_b = p.seal_with_mnemonic(&rik, None).unwrap();
         // Recover bundle A with mnemonic B -> must fail (different recovery keys).
         assert!(p
-            .recover_with_mnemonic(&sealed_a.bundle, &sealed_b.mnemonic_words)
+            .recover_with_mnemonic(&sealed_a.bundle, &sealed_b.mnemonic_words, None)
             .is_err());
     }
 
     #[test]
     fn bundle_does_not_embed_mnemonic_or_recovery_key() {
         let p = MnemonicProvider::fast_for_tests();
-        let sealed = p.seal_with_mnemonic(&[7u8; 32]).unwrap();
+        let sealed = p.seal_with_mnemonic(&[7u8; 32], None).unwrap();
         // The bundle payload must not contain the mnemonic words.
         for word in sealed.mnemonic_words.split_whitespace() {
             assert!(
@@ -234,6 +248,6 @@ mod tests {
             kind: RecoveryKind::Mnemonic,
             payload: vec![0u8; 3],
         };
-        assert!(p.recover_with_mnemonic(&bad, "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art").is_err());
+        assert!(p.recover_with_mnemonic(&bad, "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art", None).is_err());
     }
 }

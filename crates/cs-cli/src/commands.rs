@@ -202,7 +202,7 @@ fn cmd_recover(state: &AppState, args: &RecoverArgs) -> Result<(), CliError> {
             let bundle: cs_keys::RecoveryBundle = postcard::from_bytes(&bundle_bytes)
                 .map_err(|e| CliError::Plain(format!("bundle decode: {e}")))?;
             let rik = mp
-                .recover_with_mnemonic(&bundle, &words)
+                .recover_with_mnemonic(&bundle, &words, None)
                 .map_err(|e| CliError::Plain(format!("recovery failed: {e}")))?;
             DeviceIdentity::with_rik(cs_crypto::Rik::from_bytes(rik))
         }

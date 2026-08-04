@@ -15,6 +15,7 @@ use crate::wrap::{unwrap_key, wrap_key, WrappedKey};
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256 as Sha256Hasher};
 
 pub const MAGIC: &[u8; 6] = b"CSYNC1";
 pub const VERSION: u8 = 1;
@@ -47,20 +48,6 @@ pub fn seal(plaintext: &[u8], aad: &Aad, recip: &RecipientKeys) -> Result<SealOu
     let (kek, ct) = hybrid_encapsulate(recip)?;
     let wrapped_dek = wrap_key(dek.as_bytes(), &kek, aad)?;
 
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(dek.as_bytes()));
-    let nonce_bytes = random_nonce24()?;
-    let nonce = XNonce::from_slice(&nonce_bytes);
-    let aad_bytes = aad.encode();
-    let ct_body = cipher
-        .encrypt(
-            nonce,
-            Payload {
-                msg: plaintext,
-                aad: &aad_bytes,
-            },
-        )
-        .map_err(|_| CryptoError::AuthFailed)?;
-
     let hb = HeaderBody {
         pq_ct: ct.pq_ct,
         classic_eph: ct.classic_eph,
@@ -72,6 +59,30 @@ pub fn seal(plaintext: &[u8], aad: &Aad, recip: &RecipientKeys) -> Result<SealOu
     header.push(VERSION);
     let encoded = postcard::to_allocvec(&hb).map_err(|e| CryptoError::Encode(e.to_string()))?;
     header.extend_from_slice(&encoded);
+
+    // Bind the header into the body AAD to prevent header/body splicing
+    // attacks. The header hash ensures the body can only be decrypted with
+    // the exact header it was sealed with.
+    let header_hash = {
+        let mut h = Sha256Hasher::new();
+        h.update(&header);
+        h.finalize()
+    };
+    let mut body_aad = aad.encode();
+    body_aad.extend_from_slice(&header_hash);
+
+    let cipher = XChaCha20Poly1305::new(Key::from_slice(dek.as_bytes()));
+    let nonce_bytes = random_nonce24()?;
+    let nonce = XNonce::from_slice(&nonce_bytes);
+    let ct_body = cipher
+        .encrypt(
+            nonce,
+            Payload {
+                msg: plaintext,
+                aad: &body_aad,
+            },
+        )
+        .map_err(|_| CryptoError::AuthFailed)?;
 
     let mut body = Vec::with_capacity(24 + ct_body.len());
     body.extend_from_slice(&nonce_bytes);
@@ -106,15 +117,23 @@ pub fn open(
     let kek = hybrid_decapsulate(&kem_ct, secrets)?;
     let dek = unwrap_key(&hb.wrapped_dek, &kek, aad)?;
 
+    // Reconstruct the same header-bound AAD used during sealing.
+    let header_hash = {
+        let mut h = Sha256Hasher::new();
+        h.update(input.header);
+        h.finalize()
+    };
+    let mut body_aad = aad.encode();
+    body_aad.extend_from_slice(&header_hash);
+
     let cipher = XChaCha20Poly1305::new(Key::from_slice(&dek));
     let nonce = XNonce::from_slice(nonce_bytes);
-    let aad_bytes = aad.encode();
     cipher
         .decrypt(
             nonce,
             Payload {
                 msg: ct_body,
-                aad: &aad_bytes,
+                aad: &body_aad,
             },
         )
         .map_err(|_| CryptoError::AuthFailed)

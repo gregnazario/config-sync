@@ -101,9 +101,11 @@ fn mnemonic_recovery_round_trips_rik() {
 
     let mp = MnemonicProvider::fast_for_tests();
     let real_rik = *id.rik.as_bytes();
-    let sealed = mp.seal_with_mnemonic(&real_rik).unwrap();
+    let sealed = mp.seal_with_mnemonic(&real_rik, None).unwrap();
     let words = sealed.mnemonic_words.clone();
-    let recovered = mp.recover_with_mnemonic(&sealed.bundle, &words).unwrap();
+    let recovered = mp
+        .recover_with_mnemonic(&sealed.bundle, &words, None)
+        .unwrap();
     assert_eq!(recovered, real_rik);
 }
 
@@ -138,9 +140,9 @@ fn multiple_recovery_providers_seal_the_same_rik() {
     let rik = [0x99u8; 32];
 
     let mn = MnemonicProvider::fast_for_tests();
-    let mn_sealed = mn.seal_with_mnemonic(&rik).unwrap();
+    let mn_sealed = mn.seal_with_mnemonic(&rik, None).unwrap();
     assert_eq!(
-        mn.recover_with_mnemonic(&mn_sealed.bundle, &mn_sealed.mnemonic_words)
+        mn.recover_with_mnemonic(&mn_sealed.bundle, &mn_sealed.mnemonic_words, None)
             .unwrap(),
         rik
     );
