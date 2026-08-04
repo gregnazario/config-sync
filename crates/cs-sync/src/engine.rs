@@ -290,11 +290,26 @@ async fn sync_inner(
         let current_etag = if attempt == 0 {
             remote_etag.clone()
         } else {
-            // Re-fetch remote to detect concurrent changes before our put.
+            // Re-fetch remote and re-diff to detect concurrent changes to
+            // existing paths (not just new ones).
             let (remote, etag) = fetch_remote_manifest(store).await?;
-            for (path, entry) in &remote.entries {
-                if !local.entries.contains_key(path) {
-                    local.entries.insert(path.clone(), entry.clone());
+            let retry_ops = diff(local, &remote);
+            for op in &retry_ops {
+                match op {
+                    DiffOp::PullLocal { path, remote } => {
+                        // Remote has a newer version of an existing path.
+                        // Fast-forward our local to match.
+                        local.entries.insert(path.clone(), remote.clone());
+                    }
+                    DiffOp::PullDeletion { path, .. } => {
+                        local.entries.remove(path);
+                    }
+                    DiffOp::InSync { .. }
+                    | DiffOp::PushRemote { .. }
+                    | DiffOp::PushDeletion { .. }
+                    | DiffOp::Conflict { .. } => {
+                        // Our local is ahead or in sync; keep our version.
+                    }
                 }
             }
             etag

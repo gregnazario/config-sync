@@ -75,17 +75,15 @@ fn normalize_prefix(mut p: String) -> String {
 /// Map any AWS SDK error to a `StorageError` by inspecting the Smithy error
 /// code and the underlying HTTP status. Works across all per-operation error
 /// enums without naming each one.
-fn map_err<E: std::fmt::Display>(e: E) -> StorageError {
-    let s = e.to_string();
-    // Smithy error codes appear as `NoSuchKey`, `PreconditionFailed`, etc.
-    let lower = s.to_ascii_lowercase();
-    if lower.contains("nosuchkey") || lower.contains("nosuchbucket") || lower.contains("404") {
-        return StorageError::NotFound(s);
+fn map_err(e: aws_sdk_s3::Error) -> StorageError {
+    use aws_sdk_s3::Error;
+    match &e {
+        Error::NoSuchBucket(_) | Error::NoSuchKey(_) | Error::NotFound(_) => {
+            StorageError::NotFound(e.to_string())
+        }
+        Error::PreconditionFailed(_) => StorageError::PreconditionFailed,
+        _ => StorageError::Backend(e.to_string()),
     }
-    if lower.contains("preconditionfailed") || lower.contains("412") {
-        return StorageError::PreconditionFailed;
-    }
-    StorageError::Backend(s)
 }
 
 #[async_trait]

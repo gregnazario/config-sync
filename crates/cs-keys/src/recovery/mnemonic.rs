@@ -68,24 +68,16 @@ impl MnemonicProvider {
         t: u32,
         m: u32,
         p: u32,
-    ) -> Result<[u8; 32], KeysError> {
+    ) -> Result<zeroize::Zeroizing<[u8; 32]>, KeysError> {
         let params =
             Params::new(m, t, p, Some(32)).map_err(|e| KeysError::Recovery(e.to_string()))?;
         let a2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-        let mut out = [0u8; 32];
-        a2.hash_password_into(recovery_key, salt, &mut out)
+        let mut out = zeroize::Zeroizing::new([0u8; 32]);
+        a2.hash_password_into(recovery_key, salt, out.as_mut())
             .map_err(|e| KeysError::Recovery(e.to_string()))?;
         Ok(out)
     }
 
-    /// Generate a fresh 24-word BIP-39 mnemonic, derive its recovery key, and
-    /// seal the RIK to it. The mnemonic is returned for the user to transcribe;
-    /// it is never stored in the bundle.
-    ///
-    /// If `passphrase` is `Some`, it is used as the BIP-39 passphrase (second
-    /// factor), providing an additional layer of security: an attacker who
-    /// obtains the mnemonic words still cannot derive the key without the
-    /// passphrase. The passphrase is never stored.
     pub fn seal_with_mnemonic(
         &self,
         rik: &[u8; 32],
@@ -93,10 +85,10 @@ impl MnemonicProvider {
     ) -> Result<SealedWithMnemonic, KeysError> {
         let mnemonic =
             bip39::Mnemonic::generate(24).map_err(|e| KeysError::Recovery(e.to_string()))?;
-        let recovery_key = mnemonic.to_seed(passphrase.unwrap_or(""));
-        let mut salt = [0u8; 16];
-        getrandom::fill(&mut salt).map_err(|e| KeysError::Recovery(e.to_string()))?;
-        let bundle = self.seal_with_recovery_key(rik, &recovery_key, &salt)?;
+        let recovery_key = zeroize::Zeroizing::new(mnemonic.to_seed(passphrase.unwrap_or("")));
+        let mut salt = zeroize::Zeroizing::new([0u8; 16]);
+        getrandom::fill(salt.as_mut()).map_err(|e| KeysError::Recovery(e.to_string()))?;
+        let bundle = self.seal_with_recovery_key(rik, &*recovery_key, &salt)?;
         Ok(SealedWithMnemonic {
             bundle,
             mnemonic_words: mnemonic.to_string(),
@@ -116,7 +108,7 @@ impl MnemonicProvider {
             self.argon_mem_cost_kib,
             self.argon_parallelism,
         )?;
-        let cipher = XChaCha20Poly1305::new(Key::from_slice(&kek));
+        let cipher = XChaCha20Poly1305::new(Key::from_slice(&*kek));
         let mut nonce = [0u8; 24];
         getrandom::fill(&mut nonce).map_err(|e| KeysError::Recovery(e.to_string()))?;
         let ct = cipher
@@ -135,11 +127,6 @@ impl MnemonicProvider {
         })
     }
 
-    /// Recover the RIK from a bundle using the user's transcribed mnemonic words.
-    ///
-    /// If `passphrase` is `Some`, it must match the passphrase used during
-    /// `seal_with_mnemonic`. An empty passphrase (`None` or `Some("")`) is
-    /// used if no second factor was set.
     pub fn recover_with_mnemonic(
         &self,
         bundle: &RecoveryBundle,
@@ -150,15 +137,15 @@ impl MnemonicProvider {
             .map_err(|e| KeysError::Recovery(e.to_string()))?;
         let mnemonic = bip39::Mnemonic::parse_normalized(mnemonic_words)
             .map_err(|e| KeysError::Recovery(e.to_string()))?;
-        let recovery_key = mnemonic.to_seed(passphrase.unwrap_or(""));
+        let recovery_key = zeroize::Zeroizing::new(mnemonic.to_seed(passphrase.unwrap_or("")));
         let kek = Self::derive_kek(
-            &recovery_key,
+            &*recovery_key,
             &p.salt,
             self.argon_time_cost,
             self.argon_mem_cost_kib,
             self.argon_parallelism,
         )?;
-        let cipher = XChaCha20Poly1305::new(Key::from_slice(&kek));
+        let cipher = XChaCha20Poly1305::new(Key::from_slice(&*kek));
         let pt = cipher
             .decrypt(
                 XNonce::from_slice(&p.nonce),

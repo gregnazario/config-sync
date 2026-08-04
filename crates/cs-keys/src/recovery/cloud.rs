@@ -51,20 +51,24 @@ struct CloudPayload {
 }
 
 impl CloudBundleProvider {
-    fn derive(pass: &str, salt: &[u8; 16], t: u32, m: u32, p: u32) -> Result<[u8; 32], KeysError> {
+    fn derive(
+        pass: &str,
+        salt: &[u8; 16],
+        t: u32,
+        m: u32,
+        p: u32,
+    ) -> Result<zeroize::Zeroizing<[u8; 32]>, KeysError> {
         let params =
             Params::new(m, t, p, Some(32)).map_err(|e| KeysError::Recovery(e.to_string()))?;
         let a2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
-        let mut out = [0u8; 32];
-        a2.hash_password_into(pass.as_bytes(), salt, &mut out)
+        let mut out = zeroize::Zeroizing::new([0u8; 32]);
+        a2.hash_password_into(pass.as_bytes(), salt, out.as_mut())
             .map_err(|e| KeysError::Recovery(e.to_string()))?;
         Ok(out)
     }
 }
 
 impl CloudBundleProvider {
-    /// Seal the RIK under a passphrase-derived KEK. Returns a bundle that can
-    /// be uploaded to any remote store under `recovery/<id>.bundle`.
     pub fn seal_with_passphrase(
         &self,
         rik: &[u8; 32],
@@ -79,7 +83,7 @@ impl CloudBundleProvider {
             self.argon_mem_cost_kib,
             self.argon_parallelism,
         )?;
-        let cipher = XChaCha20Poly1305::new(Key::from_slice(&kek));
+        let cipher = XChaCha20Poly1305::new(Key::from_slice(&*kek));
         let mut nonce = [0u8; 24];
         getrandom::fill(&mut nonce).map_err(|e| KeysError::Recovery(e.to_string()))?;
         let ct = cipher
@@ -93,7 +97,6 @@ impl CloudBundleProvider {
         })
     }
 
-    /// Recover the RIK given the bundle and the passphrase.
     pub fn recover_with_passphrase(
         &self,
         bundle: &RecoveryBundle,
@@ -108,7 +111,7 @@ impl CloudBundleProvider {
             self.argon_mem_cost_kib,
             self.argon_parallelism,
         )?;
-        let cipher = XChaCha20Poly1305::new(Key::from_slice(&kek));
+        let cipher = XChaCha20Poly1305::new(Key::from_slice(&*kek));
         let pt = cipher
             .decrypt(
                 XNonce::from_slice(&p.nonce),

@@ -76,12 +76,10 @@ impl GoogleDriveStore {
 
     // ---- index helpers (with per-instance caching) ---------------------
 
-    /// Invalidate the index cache. Should be called at the start of each sync
-    /// cycle to ensure we see concurrent changes from other devices.
-    pub fn invalidate_cache(&self) {
-        // Non-async try_lock: if contended, the holder will serve fresh data.
-        // Using blocking lock here is fine since this is called once per sync.
-        // We use a channel-based approach to avoid blocking the async runtime.
+    /// Invalidate the index cache. Call this at the start of each sync cycle
+    /// to ensure the next load_index fetches fresh data from Drive.
+    pub async fn invalidate_cache(&self) {
+        *self.index_cache.lock().await = None;
     }
 
     async fn load_index(&self) -> Result<Index, StorageError> {
