@@ -75,8 +75,16 @@ impl ShamirProvider {
     /// Reconstruct the secret from `k` or more shares. Shares can be provided
     /// in any order and from any subset of holders.
     pub fn recombine(&self, shares: &[ShamirShare]) -> Result<[u8; 32], KeysError> {
-        // Deduplicate by share index (x-coordinate).
-        let seen: BTreeSet<u8> = shares.iter().map(|s| s.index).collect();
+        // Reject any duplicates outright — supplying the same share twice
+        // produces a silently wrong reconstruction via GF256 div-by-zero.
+        let mut seen: BTreeSet<u8> = BTreeSet::new();
+        for s in shares {
+            if !seen.insert(s.index) {
+                return Err(KeysError::Recovery(
+                    "duplicate shares are not allowed; supply each distinct share once".into(),
+                ));
+            }
+        }
         if (seen.len() as u8) < self.k {
             return Err(KeysError::Recovery(format!(
                 "need {} distinct shares, have {}",

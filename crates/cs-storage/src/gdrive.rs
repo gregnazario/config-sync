@@ -189,8 +189,7 @@ impl GoogleDriveStore {
                 }
             }
         }
-        // Update cache with the new version.
-        *self.index_cache.lock().await = Some(idx.clone());
+        // Cache update is done by the caller (who holds the mutex guard).
         Ok(())
     }
 
@@ -378,6 +377,8 @@ impl RemoteStore for GoogleDriveStore {
         }
         idx.version += 1;
         self.save_index_locked(&mut idx).await?;
+        // Update cache via the held guard (no re-lock).
+        *_guard = Some(idx.clone());
         Ok(Etag(idx.version.to_string()))
     }
 
@@ -398,6 +399,7 @@ impl RemoteStore for GoogleDriveStore {
         idx.files.remove(name);
         idx.version += 1;
         self.save_index_locked(&mut idx).await?;
+        *_guard = Some(idx.clone());
         Ok(())
     }
 

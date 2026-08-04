@@ -327,16 +327,22 @@ fn scan_local(
 ) -> Result<Vec<PendingPush>, SyncError> {
     let mut staged = Vec::new();
     for mf in inputs.files {
-        // Distinguish NotFound (genuine deletion → tombstone) from other IO
-        // errors (transient failures → propagate, don't tombstone).
-        let on_disk = match std::fs::read(&mf.disk_path) {
-            Ok(b) => Some(b),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(SyncError::Io(e)),
-        };
-        let mtime = match std::fs::metadata(&mf.disk_path) {
-            Ok(m) => m.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => std::time::SystemTime::UNIX_EPOCH,
+        // Read metadata first, then content, to minimize the TOCTOU window
+        // between bytes and mtime.
+        let (on_disk, mtime) = match std::fs::metadata(&mf.disk_path) {
+            Ok(meta) => {
+                let modified = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+                match std::fs::read(&mf.disk_path) {
+                    Ok(b) => (Some(b), modified),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        (None, std::time::SystemTime::UNIX_EPOCH)
+                    }
+                    Err(e) => return Err(SyncError::Io(e)),
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                (None, std::time::SystemTime::UNIX_EPOCH)
+            }
             Err(e) => return Err(SyncError::Io(e)),
         };
         let existing = local.entries.get(&mf.logical).cloned();

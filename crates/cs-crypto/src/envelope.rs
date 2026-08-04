@@ -45,7 +45,8 @@ fn random_nonce24() -> Result<[u8; 24], CryptoError> {
 
 pub fn seal(plaintext: &[u8], aad: &Aad, recip: &RecipientKeys) -> Result<SealOutput, CryptoError> {
     let dek = generate_dek()?;
-    let (kek, ct) = hybrid_encapsulate(recip)?;
+    let (kek_raw, ct) = hybrid_encapsulate(recip)?;
+    let kek = zeroize::Zeroizing::new(kek_raw);
     let wrapped_dek = wrap_key(dek.as_bytes(), &kek, aad)?;
 
     let hb = HeaderBody {
@@ -114,7 +115,7 @@ pub fn open(
         pq_ct: hb.pq_ct,
         classic_eph: hb.classic_eph,
     };
-    let kek = hybrid_decapsulate(&kem_ct, secrets)?;
+    let kek = zeroize::Zeroizing::new(hybrid_decapsulate(&kem_ct, secrets)?);
     let dek = zeroize::Zeroizing::new(unwrap_key(&hb.wrapped_dek, &kek, aad)?);
 
     // Reconstruct the same header-bound AAD used during sealing.
