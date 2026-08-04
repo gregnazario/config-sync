@@ -27,6 +27,8 @@ pub struct GoogleDriveStore {
     http: reqwest::Client,
     api_base: String,
     root_folder_id: String,
+    /// Per-instance index cache: avoids 2 HTTP round-trips per op within a sync.
+    index_cache: tokio::sync::Mutex<Option<Index>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -62,6 +64,7 @@ impl GoogleDriveStore {
             http,
             api_base: "https://www.googleapis.com/drive/v3".to_string(),
             root_folder_id: root_folder_id.into(),
+            index_cache: tokio::sync::Mutex::new(None),
         }
     }
 
@@ -71,9 +74,16 @@ impl GoogleDriveStore {
         self
     }
 
-    // ---- index helpers -------------------------------------------------
+    // ---- index helpers (with per-instance caching) ---------------------
 
     async fn load_index(&self) -> Result<Index, StorageError> {
+        // Return cached index if available (avoids 2 HTTP round-trips per op).
+        let cache = self.index_cache.lock().await;
+        if let Some(ref cached) = *cache {
+            return Ok(cached.clone());
+        }
+        drop(cache);
+
         // Find the index file by name in the root folder.
         let url = format!(
             "{}/files?q={}+in+parents+and+name='{}'&fields=files(id)",
@@ -87,16 +97,19 @@ impl GoogleDriveStore {
             return Err(map_err(status, resp.text().await.unwrap_or_default()));
         }
         let v: ListFilesResp = resp.json().await.map_err(net_err)?;
-        match v.files.first() {
+        let idx = match v.files.first() {
             Some(f) => {
                 let bytes = self.download(&f.id).await?;
                 let mut idx: Index = serde_json::from_slice(&bytes)
                     .map_err(|e| StorageError::Backend(format!("bad index json: {e}")))?;
                 idx.index_file_id = Some(f.id.clone());
-                Ok(idx)
+                idx
             }
-            None => Ok(Index::default()),
-        }
+            None => Index::default(),
+        };
+        // Cache for subsequent calls in this sync cycle.
+        *self.index_cache.lock().await = Some(idx.clone());
+        Ok(idx)
     }
 
     async fn save_index(&self, idx: &mut Index) -> Result<(), StorageError> {
@@ -104,20 +117,19 @@ impl GoogleDriveStore {
             .map_err(|e| StorageError::Backend(format!("index encode: {e}")))?;
         match &idx.index_file_id {
             Some(id) => {
-                // Overwrite the existing index file in place.
                 self.replace_content(id, &bytes).await?;
             }
             None => {
-                // First write: create the index file and remember its id.
                 let id = self.create_file(INDEX_NAME, &bytes).await?;
                 idx.index_file_id = Some(id);
-                // Re-write once so the stored index carries its own id.
                 let again = serde_json::to_vec(idx)
                     .map_err(|e| StorageError::Backend(format!("index encode: {e}")))?;
                 self.replace_content(idx.index_file_id.as_ref().unwrap(), &again)
                     .await?;
             }
         }
+        // Update cache with the new version.
+        *self.index_cache.lock().await = Some(idx.clone());
         Ok(())
     }
 

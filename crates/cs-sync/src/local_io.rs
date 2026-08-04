@@ -17,33 +17,32 @@ pub struct SealedFile {
     pub header_id: Sha256,
 }
 
-/// Read a file from disk and seal it into a [`SealedFile`] plus a manifest
-/// [`Entry`]. `clock` becomes the entry's causal clock; the caller bumps it.
-pub fn read_and_seal(
-    disk_path: &Path,
+/// Seal already-read plaintext bytes into a [`SealedFile`] plus a manifest
+/// [`Entry`]. This avoids re-reading the file from disk when the caller has
+/// already read it (e.g. for hash detection in `scan_local`).
+pub fn seal_plaintext(
+    plaintext: &[u8],
     logical_path: &ConfigPath,
     aad_version: u64,
     clock: VectorClock,
     recip: &RecipientKeys,
+    modified: SystemTime,
 ) -> Result<(Entry, SealedFile), SyncError> {
-    let plaintext = std::fs::read(disk_path)?;
     let size = plaintext.len() as u64;
     let aad = Aad {
         path: logical_path.0.clone(),
         version: aad_version,
     };
-    let out = seal(&plaintext, &aad, recip)?;
+    let out = seal(plaintext, &aad, recip)?;
     let header_id = Sha256::of(&out.header);
-    let content_hash = Sha256::of(&plaintext);
+    let content_hash = Sha256::of(plaintext);
     let entry = Entry {
         blob_id: header_id.clone(),
         content_hash,
         aad_version,
         clock,
         size,
-        modified: std::fs::metadata(disk_path)?
-            .modified()
-            .unwrap_or(SystemTime::UNIX_EPOCH),
+        modified,
         deleted: false,
     };
     Ok((
@@ -54,6 +53,29 @@ pub fn read_and_seal(
             header_id,
         },
     ))
+}
+
+/// Read a file from disk and seal it into a [`SealedFile`] plus a manifest
+/// [`Entry`]. Thin wrapper around [`seal_plaintext`] that reads from disk.
+pub fn read_and_seal(
+    disk_path: &Path,
+    logical_path: &ConfigPath,
+    aad_version: u64,
+    clock: VectorClock,
+    recip: &RecipientKeys,
+) -> Result<(Entry, SealedFile), SyncError> {
+    let plaintext = std::fs::read(disk_path)?;
+    let modified = std::fs::metadata(disk_path)?
+        .modified()
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    seal_plaintext(
+        &plaintext,
+        logical_path,
+        aad_version,
+        clock,
+        recip,
+        modified,
+    )
 }
 
 /// Open a sealed header+body pair into plaintext, binding the entry's

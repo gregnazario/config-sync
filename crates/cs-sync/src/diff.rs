@@ -28,27 +28,27 @@ pub fn diff(local: &Manifest, remote: &Manifest) -> Vec<DiffOp> {
     let paths: BTreeSet<&ConfigPath> = local.entries.keys().chain(remote.entries.keys()).collect();
     let mut out = Vec::new();
     for p in paths {
-        match (
-            local.entries.get(p).cloned(),
-            remote.entries.get(p).cloned(),
-        ) {
+        // Borrow-first: only clone the entry into a DiffOp when the arm
+        // actually needs ownership. InSync and happens_before comparisons
+        // work on references.
+        match (local.entries.get(p), remote.entries.get(p)) {
             (None, Some(r)) => {
                 if r.deleted {
                     out.push(DiffOp::PullDeletion {
                         path: p.clone(),
-                        remote: r,
+                        remote: r.clone(),
                     });
                 } else {
                     out.push(DiffOp::PullLocal {
                         path: p.clone(),
-                        remote: r,
+                        remote: r.clone(),
                     });
                 }
             }
             (Some(l), None) => {
                 out.push(DiffOp::PushRemote {
                     path: p.clone(),
-                    local: l,
+                    local: l.clone(),
                 });
             }
             (Some(l), Some(r)) => {
@@ -58,31 +58,31 @@ pub fn diff(local: &Manifest, remote: &Manifest) -> Vec<DiffOp> {
                     if r.deleted {
                         out.push(DiffOp::PullDeletion {
                             path: p.clone(),
-                            remote: r,
+                            remote: r.clone(),
                         });
                     } else {
                         out.push(DiffOp::PullLocal {
                             path: p.clone(),
-                            remote: r,
+                            remote: r.clone(),
                         });
                     }
                 } else if r.clock.happens_before(&l.clock) {
                     if l.deleted {
                         out.push(DiffOp::PushDeletion {
                             path: p.clone(),
-                            local: l,
+                            local: l.clone(),
                         });
                     } else {
                         out.push(DiffOp::PushRemote {
                             path: p.clone(),
-                            local: l,
+                            local: l.clone(),
                         });
                     }
                 } else {
                     out.push(DiffOp::Conflict {
                         path: p.clone(),
-                        local: l,
-                        remote: r,
+                        local: l.clone(),
+                        remote: r.clone(),
                     });
                 }
             }

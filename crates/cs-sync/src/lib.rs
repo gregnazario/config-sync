@@ -15,4 +15,4 @@ pub use conflict::{
 pub use diff::{diff, DiffOp};
 pub use engine::{sync, ManagedFile, SyncContext, SyncReport};
 pub use error::SyncError;
-pub use local_io::{open_sealed, read_and_seal, write_plaintext, SealedFile};
+pub use local_io::{open_sealed, read_and_seal, seal_plaintext, write_plaintext, SealedFile};

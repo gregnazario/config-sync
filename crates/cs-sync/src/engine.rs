@@ -3,7 +3,7 @@
 
 use crate::conflict::{resolve_conflict, ConflictResolver, Resolution};
 use crate::diff::{diff, DiffOp};
-use crate::local_io::{open_sealed, read_and_seal, write_plaintext};
+use crate::local_io::{open_sealed, read_and_seal, seal_plaintext, write_plaintext};
 use crate::SyncError;
 use bytes::Bytes;
 use cs_config::ConflictPolicy;
@@ -91,54 +91,83 @@ async fn sync_inner(
     // Phase 0: scan local files into the manifest.
     let staged_pushes: Vec<PendingPush> = scan_local(local, inputs)?;
 
-    // Upload all staged blobs ONCE (they're content-addressed and immutable;
-    // re-uploading on CAS retry is pure waste).
-    for p in &staged_pushes {
-        let id_hex = p.entry.blob_id.to_hex();
-        store
-            .put(&blob_key(&id_hex), Bytes::from(p.header_blob.clone()), None)
-            .await?;
-        store
-            .put(
-                &blob_body_key(&id_hex),
-                Bytes::from(p.body_blob.clone()),
-                None,
-            )
-            .await?;
-        local.entries.insert(p.path.clone(), p.entry.clone());
+    // Upload all staged blobs ONCE in parallel (content-addressed + immutable).
+    // Consume pushes by value to avoid cloning blob bytes.
+    report.pushed.reserve(staged_pushes.len());
+    let push_futures: Vec<_> = staged_pushes
+        .into_iter()
+        .map(|p| {
+            let id_hex = p.entry.blob_id.to_hex();
+            let hdr = blob_key(&id_hex);
+            let body = blob_body_key(&id_hex);
+            async move {
+                store.put(&hdr, Bytes::from(p.header_blob), None).await?;
+                store.put(&body, Bytes::from(p.body_blob), None).await?;
+                Ok::<_, SyncError>((p.path, p.entry))
+            }
+        })
+        .collect();
+    let push_results = futures_util::future::try_join_all(push_futures).await?;
+    for (path, entry) in push_results {
+        local.entries.insert(path.clone(), entry);
+        report.pushed.push(path);
     }
 
     // Build a quick lookup for managed files.
     let file_map: std::collections::HashMap<&cs_manifest::ConfigPath, &ManagedFile> =
         inputs.files.iter().map(|f| (&f.logical, f)).collect();
 
-    // Phase 1: pull remote changes and resolve conflicts (may run multiple
-    // times due to CAS retries on the manifest put).
+    // Phase 1: pull remote changes and resolve conflicts.
+    let ops = diff(local, &fetch_remote_manifest(store).await?);
+
+    // Separate independent pull ops (can be parallelized) from sequential ops.
+    let pull_ops: Vec<(&cs_manifest::ConfigPath, &Entry)> = ops
+        .iter()
+        .filter_map(|op| match op {
+            DiffOp::PullLocal { path, remote } => Some((path, remote)),
+            _ => None,
+        })
+        .collect();
+
+    // Fetch all pull blobs in parallel.
+    let pull_futures: Vec<_> = pull_ops
+        .into_iter()
+        .filter_map(|(path, remote)| {
+            let mf = file_map.get(path)?;
+            let id_hex = remote.blob_id.to_hex();
+            let hdr_key = blob_key(&id_hex);
+            let body_key = blob_body_key(&id_hex);
+            Some(async move {
+                let hdr = store.get(&hdr_key).await?;
+                let body = store.get(&body_key).await?;
+                Ok::<_, SyncError>((path, remote, mf, hdr, body))
+            })
+        })
+        .collect();
+    let pull_results = futures_util::future::try_join_all(pull_futures).await?;
+
+    // Apply pull results sequentially (writes to disk + local manifest).
+    for (path, remote, mf, hdr, body) in pull_results {
+        let pt = open_sealed(&hdr, &body, path, remote, inputs.recip_secrets)?;
+        write_plaintext(&mf.disk_path, &pt)?;
+        local.entries.insert(path.clone(), remote.clone());
+        report.pulled.push(path.clone());
+    }
+
+    // Process remaining ops (deletions, conflicts) sequentially.
     let mut conflict_pushes: Vec<cs_manifest::ConfigPath> = Vec::new();
     let mut aborted = false;
 
-    for op in &diff(local, &fetch_remote_manifest(store).await?) {
+    for op in &ops {
         match op {
-            DiffOp::PullLocal { path, remote } => {
-                if let Some(mf) = file_map.get(path) {
-                    let id_hex = remote.blob_id.to_hex();
-                    let hdr = store.get(&blob_key(&id_hex)).await?;
-                    let body = store.get(&blob_body_key(&id_hex)).await?;
-                    let pt = open_sealed(&hdr, &body, path, remote, inputs.recip_secrets)?;
-                    write_plaintext(&mf.disk_path, &pt)?;
-                    local.entries.insert(path.clone(), remote.clone());
-                    report.pulled.push(path.clone());
-                }
-            }
+            DiffOp::PullLocal { .. } => { /* already handled above */ }
             DiffOp::PullDeletion { path, remote: _ } => {
                 if let Some(mf) = file_map.get(path) {
                     let _ = std::fs::remove_file(&mf.disk_path);
                 }
                 local.entries.remove(path);
             }
-            DiffOp::PushRemote { .. } | DiffOp::PushDeletion { .. } => {
-                // Already handled by scan_local staged_pushes above.
-            }
+            DiffOp::PushRemote { .. } | DiffOp::PushDeletion { .. } => {}
             DiffOp::InSync { .. } => {}
             DiffOp::Conflict {
                 path,
@@ -208,10 +237,7 @@ async fn sync_inner(
         return Ok(report);
     }
 
-    // Report pushed paths.
-    report
-        .pushed
-        .extend(staged_pushes.iter().map(|p| p.path.clone()));
+    // staged_pushes already consumed during upload above; add conflict pushes.
     report.pushed.extend(conflict_pushes);
 
     // Phase 2: manifest CAS retry loop (only retries the manifest put,
@@ -257,24 +283,27 @@ fn scan_local(
     let mut staged = Vec::new();
     for mf in inputs.files {
         let on_disk = std::fs::read(&mf.disk_path).ok();
+        let mtime = std::fs::metadata(&mf.disk_path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
         let existing = local.entries.get(&mf.logical).cloned();
         match (on_disk, existing) {
             (Some(plain), Some(prev)) => {
-                // Detect real content change via the plaintext hash; sealing is
-                // randomized so the ciphertext blob id is not a stable fingerprint.
                 let disk_hash = cs_manifest::Sha256::of(&plain);
                 if disk_hash == prev.content_hash && !prev.deleted {
-                    // Content unchanged; keep prev (don't re-seal or bump).
                     continue;
                 }
                 let mut clk = prev.clock.clone();
                 clk.bump(inputs.device);
-                let (entry, sf) = read_and_seal(
-                    &mf.disk_path,
+                // Use seal_plaintext to avoid re-reading the file from disk.
+                let (entry, sf) = seal_plaintext(
+                    &plain,
                     &mf.logical,
                     prev.aad_version + 1,
                     clk,
                     inputs.recip_keys,
+                    mtime,
                 )?;
                 local.entries.insert(mf.logical.clone(), entry.clone());
                 staged.push(PendingPush {
@@ -284,20 +313,18 @@ fn scan_local(
                     body_blob: sf.body_blob,
                 });
             }
-            (Some(_plain), None) => {
-                // Brand-new local file: seed an initial entry from the device's clock.
+            (Some(plain), None) => {
                 let mut clk = local.clock.clone();
                 clk.bump(inputs.device);
                 let aad_version = 1;
-                let (mut entry, sf) = read_and_seal(
-                    &mf.disk_path,
+                let (mut entry, sf) = seal_plaintext(
+                    &plain,
                     &mf.logical,
                     aad_version,
                     clk,
                     inputs.recip_keys,
+                    mtime,
                 )?;
-                // Ensure the per-path clock strictly advances from empty by bumping
-                // once more so a subsequent remote fast-forward is unambiguous.
                 entry.clock.bump(inputs.device);
                 local.entries.insert(mf.logical.clone(), entry.clone());
                 staged.push(PendingPush {
@@ -308,13 +335,12 @@ fn scan_local(
                 });
             }
             (None, Some(prev)) if !prev.deleted => {
-                // File removed locally → tombstone.
                 let mut t = prev.clone();
                 t.deleted = true;
                 t.clock.bump(inputs.device);
                 local.entries.insert(mf.logical.clone(), t);
             }
-            (None, _) => { /* nothing on disk, nothing tracked */ }
+            (None, _) => {}
         }
     }
     Ok(staged)
