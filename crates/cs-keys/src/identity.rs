@@ -4,7 +4,7 @@
 
 use crate::error::KeysError;
 use crate::SecretStore;
-use cs_crypto::{generate_recipient_keypair, generate_rik, RecipientKeys, RecipientSecrets, Rik};
+use cs_crypto::{generate_rik, RecipientKeys, RecipientSecrets, Rik};
 use serde::{Deserialize, Serialize};
 
 pub struct DeviceIdentity {
@@ -25,25 +25,24 @@ struct StoredIdentity {
 const ACCOUNT: &str = "device-identity";
 
 impl DeviceIdentity {
-    /// Generate a fresh device identity: a new RIK and a new recipient keypair.
+    /// Generate a fresh vault identity: a new random RIK with the recipient
+    /// keys deterministically derived from it (see [`DeviceIdentity::from_rik`]).
     pub fn new() -> Result<Self, KeysError> {
-        let (pk, sk) = generate_recipient_keypair();
-        Ok(Self {
-            rik: generate_rik().map_err(|e| KeysError::Recovery(e.to_string()))?,
-            recipient_keys: pk,
-            recipient_secrets: sk,
-        })
+        let rik = generate_rik().map_err(|e| KeysError::Recovery(e.to_string()))?;
+        Ok(Self::from_rik(rik))
     }
 
-    /// Build an identity from a recovered RIK, generating a fresh recipient
-    /// keypair for this device. Used by the recovery flow: the RIK is the
-    /// long-term secret, while each device gets its own recipient keys.
-    pub fn with_rik(rik: Rik) -> Self {
-        let (pk, sk) = generate_recipient_keypair();
+    /// Build an identity from a RIK, deriving the recipient keys
+    /// deterministically from it. Every device holding the same RIK derives
+    /// byte-identical recipient keys — this is what makes recovery *work*: a
+    /// recovered device can immediately decrypt every blob the vault has ever
+    /// sealed, and manifests signed with the RIK-derived key verify.
+    pub fn from_rik(rik: Rik) -> Self {
+        let (recipient_keys, recipient_secrets) = cs_crypto::derive_recipient_keypair(&rik);
         Self {
             rik,
-            recipient_keys: pk,
-            recipient_secrets: sk,
+            recipient_keys,
+            recipient_secrets,
         }
     }
 }
@@ -60,10 +59,32 @@ pub fn store_identity(store: &dyn SecretStore, id: &DeviceIdentity) -> Result<()
     store.put(ACCOUNT, &bytes)
 }
 
+/// Validate the decoded identity payload's key lengths. A legacy identity
+/// (pre ml-kem seed format: 2400-byte pqcrypto decapsulation key) or a
+/// corrupt one must fail HERE with a clear message, not later inside every
+/// decryption with an opaque `Kem` error.
+fn validate_stored(s: &StoredIdentity) -> Result<(), KeysError> {
+    if s.kem_pq_sk.len() != 64 || s.kem_pq_pk.len() != 1184 || s.kem_classic_sk.len() != 32 {
+        return Err(KeysError::Recovery(
+            "identity has an unsupported format: it predates the current key \
+             derivation scheme (or is corrupt). Restore it with recovery material, or \
+             re-initialize the vault; blobs sealed under the old scheme are unreadable \
+             without the original identity"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn load_identity(store: &dyn SecretStore) -> Result<DeviceIdentity, KeysError> {
     let bytes = store.get(ACCOUNT)?;
+    load_identity_from_bytes_impl(&bytes)
+}
+
+fn load_identity_from_bytes_impl(bytes: &[u8]) -> Result<DeviceIdentity, KeysError> {
     let s: StoredIdentity =
-        postcard::from_bytes(&bytes).map_err(|e| KeysError::Recovery(e.to_string()))?;
+        postcard::from_bytes(bytes).map_err(|e| KeysError::Recovery(e.to_string()))?;
+    validate_stored(&s)?;
     Ok(DeviceIdentity {
         rik: Rik::from_bytes(s.rik),
         recipient_keys: RecipientKeys {
@@ -93,19 +114,7 @@ pub fn identity_to_bytes(id: &DeviceIdentity) -> Result<Vec<u8>, KeysError> {
 
 /// Inverse of [`identity_to_bytes`].
 pub fn load_identity_from_bytes(bytes: &[u8]) -> Result<DeviceIdentity, KeysError> {
-    let s: StoredIdentity =
-        postcard::from_bytes(bytes).map_err(|e| KeysError::Recovery(e.to_string()))?;
-    Ok(DeviceIdentity {
-        rik: Rik::from_bytes(s.rik),
-        recipient_keys: RecipientKeys {
-            kem_pq: s.kem_pq_pk.clone(),
-            kem_classic: s.kem_classic_pk,
-        },
-        recipient_secrets: RecipientSecrets {
-            kem_pq: s.kem_pq_sk.clone(),
-            kem_classic: s.kem_classic_sk,
-        },
-    })
+    load_identity_from_bytes_impl(bytes)
 }
 
 #[cfg(test)]
@@ -151,6 +160,47 @@ mod tests {
         )
         .unwrap();
         assert_eq!(pt, b"device-local secret");
+    }
+
+    #[test]
+    fn from_rik_restores_decryption_of_existing_blobs() {
+        // The core recovery property: a blob sealed by a device that derived
+        // its keys from RIK X can be opened by a *different* device that only
+        // ever recovered RIK X and re-derived the same keys.
+        let rik = generate_rik().unwrap();
+        let original = DeviceIdentity::from_rik(rik);
+        // The "recovered" device never saw the original identity bytes — only
+        // the RIK (e.g. via a mnemonic).
+        let recovered =
+            DeviceIdentity::from_rik(cs_crypto::Rik::from_bytes(*original.rik.as_bytes()));
+        assert_eq!(
+            original.recipient_keys.kem_pq, recovered.recipient_keys.kem_pq,
+            "from_rik must derive identical recipient keys"
+        );
+
+        let aad = cs_crypto::Aad {
+            path: "vim/.vimrc".into(),
+            version: 4,
+        };
+        let out = cs_crypto::seal(b"old secret", &aad, &original.recipient_keys).unwrap();
+        let pt = cs_crypto::open(
+            cs_crypto::OpenInput {
+                header: &out.header,
+                body: &out.body,
+            },
+            &aad,
+            &recovered.recipient_secrets,
+        )
+        .unwrap();
+        assert_eq!(pt, b"old secret");
+    }
+
+    #[test]
+    fn new_identity_keys_match_derivation() {
+        let id = DeviceIdentity::new().unwrap();
+        let (pk, _) = cs_crypto::derive_recipient_keypair(&id.rik);
+        assert_eq!(id.recipient_keys.kem_pq, pk.kem_pq);
+        assert_eq!(id.recipient_keys.kem_classic, pk.kem_classic);
     }
 
     #[test]

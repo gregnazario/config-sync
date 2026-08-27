@@ -46,26 +46,17 @@ struct Index {
 impl GoogleDriveStore {
     /// Build a store pointing at the official Drive API. `bearer_token` is the
     /// OAuth access token; `root_folder_id` is the Drive folder to use as root.
-    pub fn new(bearer_token: impl Into<String>, root_folder_id: impl Into<String>) -> Self {
-        let http = reqwest::Client::builder()
-            .default_headers({
-                let mut h = reqwest::header::HeaderMap::new();
-                if let Ok(v) = reqwest::header::HeaderValue::from_str(&format!(
-                    "Bearer {}",
-                    bearer_token.into()
-                )) {
-                    h.insert(reqwest::header::AUTHORIZATION, v);
-                }
-                h
-            })
-            .build()
-            .unwrap_or_default();
-        Self {
+    pub fn new(
+        bearer_token: impl Into<String>,
+        root_folder_id: impl Into<String>,
+    ) -> Result<Self, StorageError> {
+        let http = crate::http_util::authed_client(&bearer_token.into())?;
+        Ok(Self {
             http,
             api_base: "https://www.googleapis.com/drive/v3".to_string(),
             root_folder_id: root_folder_id.into(),
             index_cache: tokio::sync::Mutex::new(None),
-        }
+        })
     }
 
     /// Point at a custom API base (for SaaS-Drive-compatible mocks / tests).
@@ -102,9 +93,12 @@ impl GoogleDriveStore {
         let resp = self.http.get(&url).send().await.map_err(net_err)?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
-        let v: ListFilesResp = resp.json().await.map_err(net_err)?;
+        let v: ListFilesResp = crate::http_util::read_json_capped(resp).await?;
         let idx = match v.files.first() {
             Some(f) => {
                 let bytes = self.download(&f.id).await?;
@@ -132,9 +126,12 @@ impl GoogleDriveStore {
         let resp = self.http.get(&url).send().await.map_err(net_err)?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
-        let v: ListFilesResp = resp.json().await.map_err(net_err)?;
+        let v: ListFilesResp = crate::http_util::read_json_capped(resp).await?;
         Ok(match v.files.first() {
             Some(f) => {
                 let bytes = self.download(&f.id).await?;
@@ -166,14 +163,14 @@ impl GoogleDriveStore {
                 );
                 let resp = self.http.get(&url).send().await.map_err(net_err)?;
                 let existing_id = if resp.status().is_success() {
-                    let v: ListFilesResp = resp.json().await.map_err(net_err)?;
+                    let v: ListFilesResp = crate::http_util::read_json_capped(resp).await?;
                     v.files.first().map(|f| f.id.clone())
                 } else {
                     None
                 };
                 if let Some(id) = existing_id {
                     // Reuse the existing index file.
-                    idx.index_file_id = Some(id);
+                    idx.index_file_id = Some(id.clone());
                     let again = serde_json::to_vec(idx)
                         .map_err(|e| StorageError::Backend(format!("index encode: {e}")))?;
                     self.replace_content(&id, &again).await?;
@@ -196,9 +193,16 @@ impl GoogleDriveStore {
         let resp = self.http.get(&url).send().await.map_err(net_err)?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
-        Ok(resp.bytes().await.map_err(net_err)?.to_vec())
+        Ok(
+            crate::http_util::read_body_capped(resp, crate::http_util::MAX_RESPONSE_BYTES)
+                .await?
+                .to_vec(),
+        )
     }
 
     async fn create_file(&self, name: &str, data: &[u8]) -> Result<String, StorageError> {
@@ -224,9 +228,12 @@ impl GoogleDriveStore {
             .map_err(net_err)?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
-        let v: serde_json::Value = resp.json().await.map_err(net_err)?;
+        let v: serde_json::Value = crate::http_util::read_json_capped(resp).await?;
         Ok(v.get("id")
             .and_then(|i| i.as_str())
             .ok_or_else(|| StorageError::Backend("create returned no id".into()))?
@@ -251,7 +258,10 @@ impl GoogleDriveStore {
             .map_err(net_err)?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
         Ok(())
     }
@@ -345,9 +355,12 @@ impl RemoteStore for GoogleDriveStore {
             .map_err(net_err)?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
-        Ok(resp.bytes().await.map_err(net_err)?)
+        Ok(crate::http_util::read_body_capped(resp, crate::http_util::MAX_RESPONSE_BYTES).await?)
     }
 
     async fn put(
@@ -358,12 +371,17 @@ impl RemoteStore for GoogleDriveStore {
     ) -> Result<Etag, StorageError> {
         // Hold the cache mutex across the entire load→mutate→save critical
         // section so concurrent puts serialize (prevents index file races).
-        let _guard = self.index_cache.lock().await;
+        let mut _guard = self.index_cache.lock().await;
 
         let mut idx = self.load_index_locked().await?;
         if let Some(want) = if_match {
-            let cur = idx.version.to_string();
-            if want.0 != cur {
+            if want.0.is_empty() {
+                // "Must be absent": only a never-saved index (no file, no
+                // versions) satisfies it.
+                if idx.index_file_id.is_some() || idx.version != 0 {
+                    return Err(StorageError::PreconditionFailed);
+                }
+            } else if want.0 != idx.version.to_string() {
                 return Err(StorageError::PreconditionFailed);
             }
         }
@@ -381,7 +399,7 @@ impl RemoteStore for GoogleDriveStore {
     }
 
     async fn delete(&self, name: &str) -> Result<(), StorageError> {
-        let _guard = self.index_cache.lock().await;
+        let mut _guard = self.index_cache.lock().await;
         let mut idx = self.load_index_locked().await?;
         let id = idx
             .files
@@ -392,7 +410,10 @@ impl RemoteStore for GoogleDriveStore {
         let resp = self.http.delete(&url).send().await.map_err(net_err)?;
         let status = resp.status();
         if status.as_u16() != 404 && !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
         idx.files.remove(name);
         idx.version += 1;

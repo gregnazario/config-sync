@@ -25,7 +25,7 @@ pub struct OneDriveStore {
 impl OneDriveStore {
     /// Build a store with the given OAuth access token. Talks to the official
     /// Microsoft Graph endpoint.
-    pub fn new(bearer_token: impl Into<String>) -> Self {
+    pub fn new(bearer_token: impl Into<String>) -> Result<Self, StorageError> {
         Self::with_base_and_token(bearer_token, GRAPH_BASE)
     }
 
@@ -33,24 +33,12 @@ impl OneDriveStore {
     pub fn with_base_and_token(
         bearer_token: impl Into<String>,
         base_url: impl Into<String>,
-    ) -> Self {
-        let http = reqwest::Client::builder()
-            .default_headers({
-                let mut h = reqwest::header::HeaderMap::new();
-                if let Ok(v) = reqwest::header::HeaderValue::from_str(&format!(
-                    "Bearer {}",
-                    bearer_token.into()
-                )) {
-                    h.insert(reqwest::header::AUTHORIZATION, v);
-                }
-                h
-            })
-            .build()
-            .unwrap_or_default();
-        Self {
+    ) -> Result<Self, StorageError> {
+        let http = crate::http_util::authed_client(&bearer_token.into())?;
+        Ok(Self {
             http,
             base_url: base_url.into(),
-        }
+        })
     }
 
     /// URL for the content endpoint of a path-addressed item:
@@ -141,9 +129,12 @@ impl RemoteStore for OneDriveStore {
             .map_err(net_err)?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
-        let v: ChildrenResp = resp.json().await.map_err(net_err)?;
+        let v: ChildrenResp = crate::http_util::read_json_capped(resp).await?;
         Ok(v.value
             .into_iter()
             .map(|item| ObjectMeta {
@@ -168,9 +159,12 @@ impl RemoteStore for OneDriveStore {
             .map_err(net_err)?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
-        Ok(resp.bytes().await.map_err(net_err)?)
+        Ok(crate::http_util::read_body_capped(resp, crate::http_util::MAX_RESPONSE_BYTES).await?)
     }
 
     async fn get_range(&self, name: &str, range: Range<u64>) -> Result<Bytes, StorageError> {
@@ -187,9 +181,12 @@ impl RemoteStore for OneDriveStore {
             .map_err(net_err)?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
-        Ok(resp.bytes().await.map_err(net_err)?)
+        Ok(crate::http_util::read_body_capped(resp, crate::http_util::MAX_RESPONSE_BYTES).await?)
     }
 
     async fn put(
@@ -204,15 +201,23 @@ impl RemoteStore for OneDriveStore {
             .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
             .body(data);
         if let Some(want) = if_match {
-            // OneDrive returns eTags wrapped in double quotes; If-Match uses them as-is.
-            req = req.header(reqwest::header::IF_MATCH, want.0.clone());
+            if want.0.is_empty() {
+                // "Must be absent" for the first-ever write.
+                req = req.header(reqwest::header::IF_NONE_MATCH, "*");
+                // OneDrive returns eTags wrapped in double quotes; If-Match uses them as-is.
+            } else {
+                req = req.header(reqwest::header::IF_MATCH, want.0.clone());
+            }
         }
         let resp = req.send().await.map_err(net_err)?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
-        let item: DriveItem = resp.json().await.map_err(net_err)?;
+        let item: DriveItem = crate::http_util::read_json_capped(resp).await?;
         Ok(Etag(item.etag.unwrap_or_else(|| "0".into())))
     }
 
@@ -229,7 +234,10 @@ impl RemoteStore for OneDriveStore {
             return Err(StorageError::NotFound(b));
         }
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
         Ok(())
     }
@@ -255,7 +263,7 @@ mod tests {
 
     #[test]
     fn children_url_for_empty_prefix() {
-        let s = OneDriveStore::with_base_and_token("tok", "https://graph.test");
+        let s = OneDriveStore::with_base_and_token("tok", "https://graph.test").unwrap();
         assert_eq!(
             s.children_url(""),
             "https://graph.test/me/drive/root:/children"
@@ -264,7 +272,7 @@ mod tests {
 
     #[test]
     fn children_url_for_prefix() {
-        let s = OneDriveStore::with_base_and_token("tok", "https://graph.test");
+        let s = OneDriveStore::with_base_and_token("tok", "https://graph.test").unwrap();
         assert_eq!(
             s.children_url("blobs"),
             "https://graph.test/me/drive/root:/blobs:/children"

@@ -2,7 +2,7 @@
 //! convergence scenario through an in-memory `RemoteStore` (not just LocalFs).
 
 use cs_config::ConflictPolicy;
-use cs_crypto::generate_recipient_keypair;
+use cs_crypto::{derive_recipient_keypair, generate_rik, ManifestSigningKey};
 use cs_manifest::{ConfigPath, DeviceId, Manifest};
 use cs_storage::MemoryStore;
 use cs_sync::{sync, ManagedFile, SyncContext};
@@ -20,7 +20,11 @@ fn managed(work: &TempDir, logical: &str) -> ManagedFile {
 #[tokio::test]
 async fn two_devices_converge_through_memory_store() {
     let store = MemoryStore::new();
-    let (pk, sk) = generate_recipient_keypair();
+    let (pk, sk, signer) = {
+        let rik = generate_rik().unwrap();
+        let (pk, sk) = derive_recipient_keypair(&rik);
+        (pk, sk, ManifestSigningKey::derive_from_rik(&rik))
+    };
     let dev_a = DeviceId::new("A");
     let dev_b = DeviceId::new("B");
 
@@ -37,6 +41,7 @@ async fn two_devices_converge_through_memory_store() {
         files: &files_a,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: None,
         now: SystemTime::UNIX_EPOCH,
     };
@@ -50,6 +55,7 @@ async fn two_devices_converge_through_memory_store() {
         files: &files_b,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: None,
         now: SystemTime::UNIX_EPOCH,
     };
@@ -65,6 +71,7 @@ async fn two_devices_converge_through_memory_store() {
             files: &files_a,
             recip_keys: &pk,
             recip_secrets: &sk,
+            manifest_signer: &signer,
             resolver: None,
             now: SystemTime::UNIX_EPOCH + Duration::from_secs(1),
         }
@@ -77,6 +84,7 @@ async fn two_devices_converge_through_memory_store() {
             files: &files_b,
             recip_keys: &pk,
             recip_secrets: &sk,
+            manifest_signer: &signer,
             resolver: None,
             now: SystemTime::UNIX_EPOCH + Duration::from_secs(2),
         }
@@ -89,6 +97,7 @@ async fn two_devices_converge_through_memory_store() {
             files: &files_a,
             recip_keys: &pk,
             recip_secrets: &sk,
+            manifest_signer: &signer,
             resolver: None,
             now: SystemTime::UNIX_EPOCH + Duration::from_secs(3),
         }

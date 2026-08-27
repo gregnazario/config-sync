@@ -125,7 +125,7 @@ impl Config {
 /// A path is "absolute-ish" (acceptable) if it starts with `~`, `/`, a Windows
 /// drive letter (`C:\` or `C:/`), or a `%VAR%` reference. Anything else is
 /// treated as relative and rejected at validation time.
-fn is_absolute_ish(path: &str) -> bool {
+pub fn is_absolute_ish(path: &str) -> bool {
     if path.starts_with('~') || path.starts_with('/') {
         return true;
     }

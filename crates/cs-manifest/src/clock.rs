@@ -17,9 +17,11 @@ impl VectorClock {
     }
 
     /// Advance this device's component by one and return the new value.
+    /// Saturates at `u64::MAX` rather than panicking (debug) or wrapping to
+    /// zero (release) — a wrapped clock would invert happens-before.
     pub fn bump(&mut self, d: &DeviceId) -> u64 {
         let v = self.0.entry(d.clone()).or_insert(0);
-        *v += 1;
+        *v = (*v).saturating_add(1);
         *v
     }
 

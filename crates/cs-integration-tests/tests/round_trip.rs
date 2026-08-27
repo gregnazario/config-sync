@@ -152,6 +152,10 @@ fn multiple_recovery_providers_seal_the_same_rik() {
     assert_eq!(sh.recover(&sh_bundle).unwrap(), rik);
 
     let cb = CloudBundleProvider::fast_for_tests();
-    let cb_bundle = cb.seal_with_passphrase(&rik, "pass").unwrap();
-    assert_eq!(cb.recover_with_passphrase(&cb_bundle, "pass").unwrap(), rik);
+    let cb_bundle = cb.seal_with_passphrase(&rik, "long-enough-pass").unwrap();
+    assert_eq!(
+        cb.recover_with_passphrase(&cb_bundle, "long-enough-pass")
+            .unwrap(),
+        rik
+    );
 }

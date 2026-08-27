@@ -75,4 +75,9 @@ pub struct RecoveryProviderArg {
 pub struct RecoverArgs {
     #[command(flatten)]
     pub provider: RecoveryProviderArg,
+    /// Create recovery material for this vault instead of restoring from it.
+    /// Mnemonic: prints the 24 words (once). Cloud: prompts a passphrase and
+    /// writes a bundle. Shamir: prints the shares to distribute.
+    #[arg(long, default_value_t = false)]
+    pub setup: bool,
 }

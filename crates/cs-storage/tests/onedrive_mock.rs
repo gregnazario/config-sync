@@ -233,7 +233,7 @@ async fn spawn() -> String {
 }
 
 fn make_store(base_url: &str) -> OneDriveStore {
-    OneDriveStore::with_base_and_token("test-oauth-token", base_url)
+    OneDriveStore::with_base_and_token("test-oauth-token", base_url).unwrap()
 }
 
 #[tokio::test]

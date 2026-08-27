@@ -256,6 +256,7 @@ async fn spawn() -> String {
 
 fn make_store(base_url: &str) -> GoogleDriveStore {
     GoogleDriveStore::new("test-token", "root-folder-id")
+        .unwrap()
         .with_api_base(format!("{base_url}/drive/v3"))
 }
 

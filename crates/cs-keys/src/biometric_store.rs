@@ -27,14 +27,24 @@ impl BiometricStore {
     }
 
     /// True when secret release actually requires a biometric/passcode prompt
-    /// on this platform (macOS Keychain ACL / Windows Hello / Linux fprintd).
-    /// False on FreeBSD where no standard biometric framework exists.
+    /// on this platform: macOS Keychain ACL, or Linux fprintd when the daemon
+    /// is reachable. False on Windows (this store delegates to the plain
+    /// Credential Manager and adds no Windows Hello binding of its own) and
+    /// on Linux without a reachable fprintd — reporting `true` there would
+    /// advertise a gate that is not actually enforced.
     pub fn is_biometric_gated(&self) -> bool {
-        cfg!(any(
-            target_os = "macos",
-            target_os = "windows",
-            target_os = "linux"
-        ))
+        #[cfg(target_os = "macos")]
+        {
+            true
+        }
+        #[cfg(target_os = "linux")]
+        {
+            fprintd_available()
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        {
+            false
+        }
     }
 }
 
@@ -61,6 +71,12 @@ mod imp {
         fn put(&self, account: &str, secret: &[u8]) -> Result<(), KeysError> {
             // Base64-encode so the secret survives the generic-password byte path.
             let b64 = STANDARD.encode(secret);
+            // Delete any existing item first: overwriting an existing item
+            // goes through SecItemUpdate, which cannot change the item's
+            // access control — an item created without the biometric ACL
+            // (e.g. by a prior --no-biometrics run sharing the same
+            // service/account) would otherwise stay permanently ungated.
+            let _ = delete_generic_password(&self.service, account);
             let mut opts = PasswordOptions::new_generic_password(&self.service, account);
             opts.set_access_control_options(biometry_flags());
             set_generic_password_options(b64.as_bytes(), opts)
@@ -128,6 +144,10 @@ mod imp {
 }
 
 // ---- Linux: fprintd fingerprint verification before releasing secrets ----
+//
+// `fprintd_available` probes whether the fprintd daemon is reachable so
+// `is_biometric_gated` can report honestly (the client-side verification
+// below silently falls back to "no gate" when fprintd is missing).
 // On Linux there's no OS-level ACL on keychain items (unlike macOS Keychain
 // or Windows Credential Manager). Instead, config-sync gates secret release
 // behind a fingerprint scan via fprintd (the standard Linux fingerprint
@@ -231,6 +251,26 @@ mod imp {
         outcome
     }
 
+    /// Best-effort probe of whether the fprintd manager object is reachable
+    /// on the system bus. Cached for the process lifetime.
+    fn fprintd_available() -> bool {
+        use std::sync::OnceLock;
+        static AVAILABLE: OnceLock<bool> = OnceLock::new();
+        *AVAILABLE.get_or_init(|| {
+            use zbus::blocking::Connection;
+            let Ok(conn) = Connection::system() else {
+                return false;
+            };
+            zbus::blocking::Proxy::new(
+                &conn,
+                "net.reactivated.Fprint",
+                "/net/reactivated/Fprint/Manager",
+                "net.reactivated.Fprint.Manager",
+            )
+            .is_ok()
+        })
+    }
+
     impl SecretStore for BiometricStore {
         fn put(&self, account: &str, secret: &[u8]) -> Result<(), KeysError> {
             self.delegate().put(account, secret)
@@ -281,14 +321,12 @@ mod tests {
     #[test]
     fn is_biometric_gated_matches_platform() {
         let s = BiometricStore::new("config-sync-test");
-        assert_eq!(
-            s.is_biometric_gated(),
-            cfg!(any(
-                target_os = "macos",
-                target_os = "windows",
-                target_os = "linux"
-            ))
-        );
+        // Only macOS unconditionally gates; Linux depends on fprintd being
+        // reachable; Windows and others report not gated.
+        #[cfg(target_os = "macos")]
+        assert!(s.is_biometric_gated());
+        #[cfg(not(target_os = "macos"))]
+        assert!(!s.is_biometric_gated() || cfg!(target_os = "linux"));
     }
 
     #[test]

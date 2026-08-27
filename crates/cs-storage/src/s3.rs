@@ -60,6 +60,30 @@ impl S3Store {
         }
     }
 
+    /// Collect a response body chunk-by-chunk under the size cap. A hostile
+    /// endpoint can omit or lie about Content-Length, so the header check
+    /// alone is not enough — every chunk is counted.
+    async fn collect_capped(
+        mut body: aws_sdk_s3::primitives::ByteStream,
+        name: &str,
+    ) -> Result<Bytes, StorageError> {
+        let mut out: Vec<u8> = Vec::new();
+        while let Some(chunk) = body
+            .next()
+            .await
+            .transpose()
+            .map_err(|e| StorageError::Backend(e.to_string()))?
+        {
+            if out.len() + chunk.len() > MAX_OBJECT_BYTES {
+                return Err(StorageError::Backend(format!(
+                    "object '{name}' exceeds the {MAX_OBJECT_BYTES}-byte cap"
+                )));
+            }
+            out.extend_from_slice(&chunk);
+        }
+        Ok(Bytes::from(out))
+    }
+
     fn strip_prefix<'a>(&'a self, key: &'a str) -> &'a str {
         key.strip_prefix(&self.prefix).unwrap_or(key)
     }
@@ -72,19 +96,47 @@ fn normalize_prefix(mut p: String) -> String {
     p
 }
 
-/// Map any AWS SDK error to a `StorageError` by inspecting the Smithy error
-/// code and the underlying HTTP status. Works across all per-operation error
-/// enums without naming each one.
-fn map_err(e: aws_sdk_s3::Error) -> StorageError {
-    use aws_sdk_s3::Error;
-    match &e {
-        Error::NoSuchBucket(_) | Error::NoSuchKey(_) | Error::NotFound(_) => {
-            StorageError::NotFound(e.to_string())
-        }
-        Error::PreconditionFailed(_) => StorageError::PreconditionFailed,
-        _ => StorageError::Backend(e.to_string()),
+/// Classify an SDK error by its HTTP status when a response is available
+/// (reliable for every modeled S3 error — NoSuchKey/NoSuchBucket are 404,
+/// failed preconditions are 412), falling back to matching the modeled error
+/// code in the Display form for transport-level errors that carry no
+/// response.
+fn classify_err(status: Option<u16>, msg: String) -> StorageError {
+    match status {
+        Some(404) => return StorageError::NotFound(msg),
+        Some(412) => return StorageError::PreconditionFailed,
+        _ => {}
     }
+    let lower = msg.to_ascii_lowercase();
+    if lower.contains("nosuchkey") || lower.contains("nosuchbucket") || lower.contains("notfound") {
+        return StorageError::NotFound(msg);
+    }
+    if lower.contains("preconditionfailed") {
+        return StorageError::PreconditionFailed;
+    }
+    StorageError::Backend(msg)
 }
+
+/// Extract the HTTP status and Display form from any per-operation SDK error
+/// in one step (the status comes from the raw response, so real 412s from S3
+/// are never misclassified by their message wording).
+fn map_err<E>(
+    e: aws_smithy_runtime_api::client::result::SdkError<E, aws_smithy_runtime_api::http::Response>,
+) -> StorageError
+where
+    E: std::fmt::Display,
+{
+    let status = e.raw_response().map(|r| r.status().as_u16());
+    classify_err(status, e.to_string())
+}
+
+/// Upper bound on a single GET response. Anything larger is a hostile or
+/// broken endpoint.
+const MAX_OBJECT_BYTES: usize = 64 * 1024 * 1024;
+/// Pagination bounds: a hostile endpoint must not be able to force an
+/// infinite listing loop with unbounded result growth.
+const MAX_LIST_PAGES: usize = 10_000;
+const MAX_LIST_KEYS: usize = 1_000_000;
 
 #[async_trait]
 impl RemoteStore for S3Store {
@@ -92,14 +144,21 @@ impl RemoteStore for S3Store {
         let full = self.full_key(prefix);
         let mut out = Vec::new();
         let mut cont: Option<String> = None;
+        let mut pages = 0usize;
         loop {
+            pages += 1;
+            if pages > MAX_LIST_PAGES || out.len() > MAX_LIST_KEYS {
+                return Err(StorageError::Backend(
+                    "listing exceeded pagination bounds (hostile or broken endpoint?)".into(),
+                ));
+            }
             let mut req = self
                 .client
                 .list_objects_v2()
                 .bucket(&self.bucket)
                 .prefix(&full);
-            if let Some(c) = cont {
-                req = req.continuation_token(c);
+            if let Some(c) = &cont {
+                req = req.continuation_token(c.clone());
             }
             let resp = req.send().await.map_err(map_err)?;
             for obj in resp.contents() {
@@ -116,10 +175,13 @@ impl RemoteStore for S3Store {
             }
             match resp.is_truncated() {
                 Some(true) => {
-                    cont = resp.next_continuation_token().map(|s| s.to_string());
-                    if cont.is_none() {
+                    let next = resp.next_continuation_token().map(|s| s.to_string());
+                    // A repeated token means the endpoint is re-serving the
+                    // same page forever — bail instead of looping.
+                    if next.is_none() || next == cont {
                         break;
                     }
+                    cont = next;
                 }
                 _ => break,
             }
@@ -137,8 +199,13 @@ impl RemoteStore for S3Store {
             .send()
             .await
             .map_err(map_err)?;
-        let body = resp.body.collect().await.map_err(map_err)?;
-        Ok(body.into_bytes())
+        if resp.content_length().unwrap_or(0) > MAX_OBJECT_BYTES as i64 {
+            return Err(StorageError::Backend(format!(
+                "object '{name}' of {} bytes exceeds the size cap",
+                resp.content_length().unwrap_or_default()
+            )));
+        }
+        Ok(Self::collect_capped(resp.body, name).await?)
     }
 
     async fn get_range(&self, name: &str, range: Range<u64>) -> Result<Bytes, StorageError> {
@@ -153,8 +220,13 @@ impl RemoteStore for S3Store {
             .send()
             .await
             .map_err(map_err)?;
-        let body = resp.body.collect().await.map_err(map_err)?;
-        Ok(body.into_bytes())
+        if resp.content_length().unwrap_or(0) > MAX_OBJECT_BYTES as i64 {
+            return Err(StorageError::Backend(format!(
+                "object '{name}' range of {} bytes exceeds the size cap",
+                resp.content_length().unwrap_or_default()
+            )));
+        }
+        Ok(Self::collect_capped(resp.body, name).await?)
     }
 
     async fn put(
@@ -203,5 +275,42 @@ impl RemoteStore for S3Store {
             range_get: true,
             conditional_put: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_err_prefers_http_status_over_wording() {
+        // Real S3 412s say "At least one of the pre-conditions..." — no
+        // "PreconditionFailed" in the message. The status must decide.
+        assert!(matches!(
+            classify_err(
+                Some(412),
+                "At least one of the pre-conditions you specified did not hold".into()
+            ),
+            StorageError::PreconditionFailed
+        ));
+        assert!(matches!(
+            classify_err(Some(404), "The specified key does not exist".into()),
+            StorageError::NotFound(_)
+        ));
+        // Transport errors (no response) fall back to modeled-code matching.
+        assert!(matches!(
+            classify_err(None, "NoSuchKey: The specified key does not exist".into()),
+            StorageError::NotFound(_)
+        ));
+        assert!(matches!(
+            classify_err(None, "connection closed".into()),
+            StorageError::Backend(_)
+        ));
+        // A key name that merely contains "404"/"notfound" must not
+        // misclassify a non-404 response.
+        assert!(matches!(
+            classify_err(Some(500), "error for key backup/page404.html".into()),
+            StorageError::Backend(_)
+        ));
     }
 }

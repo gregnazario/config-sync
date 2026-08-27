@@ -18,7 +18,7 @@ pub mod shamir;
 
 pub use cloud::CloudBundleProvider;
 pub use mnemonic::MnemonicProvider;
-pub use shamir::ShamirProvider;
+pub use shamir::{ShamirProvider, ShamirShare, SplitShares};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RecoveryKind {
@@ -31,6 +31,25 @@ pub enum RecoveryKind {
 pub struct RecoveryBundle {
     pub kind: RecoveryKind,
     pub payload: Vec<u8>,
+}
+
+/// A short human-comparable fingerprint of the RIK (first 8 bytes of a
+/// domain-separated SHA-256, hex-encoded, e.g. `3f9a07c1b2d84e55`).
+///
+/// Shown to the user when recovery material is created and again when an
+/// identity is recovered: if the two don't match, the recovered key came from
+/// substituted/tampered shares and must not be trusted. This out-of-band
+/// comparison is the only way to detect share substitution — an attacker who
+/// controls a full threshold of stored shares can fabricate a self-consistent
+/// replacement vault, but cannot make its fingerprint match the one the user
+/// recorded.
+pub fn rik_fingerprint(rik: &[u8; 32]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(b"csync/rik-fingerprint/v1");
+    h.update(rik);
+    let out = h.finalize();
+    hex::encode(&out[..8])
 }
 
 pub trait RecoveryProvider {

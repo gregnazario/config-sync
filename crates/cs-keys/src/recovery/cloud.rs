@@ -69,11 +69,24 @@ impl CloudBundleProvider {
 }
 
 impl CloudBundleProvider {
+    /// Minimum accepted passphrase length. The cloud bundle is brute-forceable
+    /// offline by anyone who holds it; a short passphrase defeats the Argon2id
+    /// hardening regardless of its cost parameters.
+    pub const MIN_PASSPHRASE_LEN: usize = 12;
+
     pub fn seal_with_passphrase(
         &self,
         rik: &[u8; 32],
         passphrase: &str,
     ) -> Result<RecoveryBundle, KeysError> {
+        if passphrase.len() < Self::MIN_PASSPHRASE_LEN {
+            return Err(KeysError::Recovery(format!(
+                "recovery passphrase must be at least {} characters (was {}); \
+                 the cloud bundle is brute-forceable offline",
+                Self::MIN_PASSPHRASE_LEN,
+                passphrase.chars().count()
+            )));
+        }
         let mut salt = [0u8; 16];
         getrandom::fill(&mut salt).map_err(|e| KeysError::Recovery(e.to_string()))?;
         let kek = Self::derive(
@@ -123,6 +136,9 @@ impl CloudBundleProvider {
                 )
                 .map_err(|_| KeysError::Crypto(cs_crypto::CryptoError::AuthFailed))?,
         );
+        if pt.len() != 32 {
+            return Err(KeysError::Crypto(cs_crypto::CryptoError::KeyLength));
+        }
         let mut out = [0u8; 32];
         out.copy_from_slice(&pt);
         Ok(out)
@@ -169,8 +185,10 @@ mod tests {
     fn wrong_passphrase_fails() {
         let p = CloudBundleProvider::fast_for_tests();
         let rik = [3u8; 32];
-        let bundle = p.seal_with_passphrase(&rik, "right").unwrap();
-        assert!(p.recover_with_passphrase(&bundle, "wrong").is_err());
+        let bundle = p.seal_with_passphrase(&rik, "right-passphrase-1").unwrap();
+        assert!(p
+            .recover_with_passphrase(&bundle, "wrong-passphrase-1")
+            .is_err());
     }
 
     #[test]

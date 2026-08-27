@@ -23,7 +23,7 @@ keyring-store = ["cs-keys/keyring"]
 # passcode on macOS; falls back to the plain keyring store elsewhere).
 biometric = ["cs-keys/biometric", "keyring-store"]
 # Interactive terminal conflict resolver (dialoguer/console). Off in tests.
-terminal = ["cs-ui/terminal"]
+terminal = ["cs-ui/terminal", "dep:dialoguer", "dep:console"]
 
 [dependencies]
 cs-crypto = { path = "../cs-crypto" }
@@ -39,6 +39,8 @@ serde = { workspace = true }
 toml = "0.8"
 dirs = "5"
 postcard = { version = "1", features = ["alloc"] }
+dialoguer = { version = "0.11", optional = true }
+console = { version = "0.15", optional = true }
 getrandom = "0.3"
 hex = "0.4"
 tokio = { version = "1", features = ["rt", "macros", "fs"] }

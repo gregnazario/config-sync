@@ -1,0 +1,130 @@
+name: Release
+
+# Triggered by pushing a v* tag. Builds release binaries for every target,
+# packages them (including .deb and .rpm on Linux), and creates a GitHub
+# Release with all artifacts. Every downstream package manager (cargo-binstall,
+# Homebrew, Chocolatey, WinGet, etc.) consumes these artifacts.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ---- Build release binaries per target --------------------------------
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            runner: macos-13
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2022
+            archive: zip
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+            archive: tar.gz
+            native_deb: true
+            native_rpm: true
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-22.04
+            archive: tar.gz
+            cross: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install build deps (Linux native)
+        if: runner.os == 'Linux' && !matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential pkg-config libdbus-1-dev libclang-dev
+
+      - name: Install CMake (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake || true
+
+      - name: Install CMake (Windows)
+        if: runner.os == 'Windows'
+        run: choco install cmake -y --installargs 'ADD_CMAKE_TO_PATH=System'
+
+      - name: Build release (native)
+        if: ${{ !matrix.cross }}
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build release (cross / QEMU)
+        if: ${{ matrix.cross }}
+        run: |
+          cargo install cross --git https://github.com/cross-rs/cross --tag v0.2.5 --locked
+          cross build --release --target ${{ matrix.target }}
+
+      - name: Build .deb
+        if: matrix.native_deb
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb --no-build --output target/debian/config-sync_${{ github.ref_name }}_amd64.deb
+        continue-on-error: true
+
+      - name: Build .rpm
+        if: matrix.native_rpm
+        run: |
+          cargo install cargo-generate-rpm --locked
+          cargo generate-rpm --target x86_64-unknown-linux-gnu
+        continue-on-error: true
+
+      - name: Package binary (Unix)
+        if: matrix.archive != 'zip'
+        run: |
+          cd target/${{ matrix.target }}/release
+          strip config-sync || true
+          tar czf ../../../config-sync-${{ matrix.target }}-${{ github.ref_name }}.tar.gz config-sync
+      - name: Package binary (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path target/${{ matrix.target }}/release/config-sync.exe -DestinationPath config-sync-${{ matrix.target }}-${{ github.ref_name }}.zip
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: config-sync-${{ matrix.target }}
+          path: |
+            config-sync-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive }}
+            target/debian/*.deb
+            target/generate-rpm/*.rpm
+
+  # ---- Create the GitHub Release ----------------------------------------
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.zip
+            artifacts/*.deb
+            artifacts/*.rpm

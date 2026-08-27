@@ -56,7 +56,7 @@ cargo binstall config-sync
 ### Build from source
 
 ```sh
-# Requires: Rust 1.75+, CMake, a C compiler (gcc/clang/MSVC)
+# Requires: Rust 1.85+ (ML-KEM is pure Rust; no C toolchain needed)
 cargo build --release
 # Binary: target/release/config-sync
 

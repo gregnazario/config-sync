@@ -190,7 +190,7 @@ async fn spawn() -> String {
 }
 
 fn make_store(base_url: &str) -> ProtonDriveStore {
-    ProtonDriveStore::new("test-session-token", base_url)
+    ProtonDriveStore::new("test-session-token", base_url).unwrap()
 }
 
 #[tokio::test]

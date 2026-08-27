@@ -5,6 +5,14 @@
 mod error;
 mod memory;
 
+#[cfg(any(
+    feature = "webdav",
+    feature = "gdrive",
+    feature = "proton",
+    feature = "onedrive"
+))]
+pub(crate) mod http_util;
+
 #[cfg(feature = "local-fs")]
 mod local_fs;
 

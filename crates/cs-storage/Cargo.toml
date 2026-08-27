@@ -6,11 +6,11 @@ license.workspace = true
 
 [features]
 default = ["local-fs"]
-local-fs = []
-s3 = ["dep:aws-sdk-s3", "dep:aws-config"]
-webdav = ["dep:reqwest"]
+local-fs = ["dep:fd-lock"]
+s3 = ["dep:aws-sdk-s3", "dep:aws-config", "dep:aws-smithy-runtime-api"]
+webdav = ["dep:reqwest", "dep:base64"]
 gdrive = ["dep:reqwest", "dep:serde", "dep:serde_json"]
-proton = ["dep:reqwest", "dep:serde", "dep:serde_json"]
+proton = ["dep:reqwest", "dep:serde", "dep:serde_json", "dep:base64"]
 onedrive = ["dep:reqwest", "dep:serde", "dep:serde_json"]
 
 [dependencies]
@@ -18,8 +18,13 @@ async-trait = "0.1"
 bytes = { workspace = true }
 thiserror = { workspace = true }
 tokio = { version = "1", features = ["fs", "io-util", "rt", "macros", "sync"] }
+getrandom = "0.3"
+hex = "0.4"
 aws-sdk-s3 = { version = "1", optional = true }
+aws-smithy-runtime-api = { version = "1", optional = true }
 aws-config = { version = "1", optional = true }
+fd-lock = { version = "4", optional = true }
+base64 = { version = "0.22", optional = true }
 reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
     "json",

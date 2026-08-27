@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 const CONFIG_FILE: &str = "config.toml";
 const STORE_DIR: &str = "store";
-const IDENTITY_ACCOUNT: &str = "device-identity";
+pub(crate) const IDENTITY_ACCOUNT: &str = "device-identity";
 
 /// The on-disk layout of a config-sync installation.
 pub struct AppState {
@@ -15,6 +15,9 @@ pub struct AppState {
     pub store_dir: PathBuf,
     pub config_path: PathBuf,
     pub prefer_biometrics: bool,
+    /// `Some(service-suffix)` when a non-default `--config-dir` is in use, so
+    /// keychain entries from different profiles never collide.
+    profile_key: Option<String>,
 }
 
 /// How the device identity is persisted. Tests use `File` (a plain file in the
@@ -28,20 +31,127 @@ pub enum AppStore {
     Biometric(cs_keys::BiometricStore),
 }
 
+/// Write `bytes` to `path` atomically and privately: a fresh 0600 temp file in
+/// the same directory, fsynced, then renamed over the target (which also
+/// *replaces* any symlink planted at the target instead of following it).
+/// A crash can never leave a truncated secret/config file behind.
+pub fn secure_write(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
+    use std::io::Write;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "config-sync".to_string());
+    let mut nonce = [0u8; 4];
+    let _ = getrandom::fill(&mut nonce);
+    let tmp = path.with_file_name(format!(".{file_name}.{}.tmp", hex::encode(nonce)));
+
+    let result = (|| -> std::io::Result<()> {
+        let mut f = {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&tmp)?
+            }
+            #[cfg(not(unix))]
+            {
+                std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&tmp)?
+            }
+        };
+        f.write_all(bytes)?;
+        f.sync_all()?;
+        drop(f);
+        Ok(())
+    })();
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e.into());
+    }
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Create `dir` (and parents) restricting the final directory to the owner
+/// on Unix. An existing directory is verified (not followed through a
+/// symlink) and tightened to owner-only — this directory holds the identity
+/// file, config (possibly backend tokens), and the local manifest.
+fn create_private_dir_all(dir: &Path) -> Result<(), CliError> {
+    match std::fs::symlink_metadata(dir) {
+        Ok(meta) => {
+            if meta.file_type().is_symlink() {
+                return Err(CliError::Plain(format!(
+                    "config dir {} is a symlink; refusing to store secrets through it —                      remove the symlink or use a real directory",
+                    dir.display()
+                )));
+            }
+            if !meta.is_dir() {
+                return Err(CliError::Plain(format!(
+                    "config dir {} exists but is not a directory",
+                    dir.display()
+                )));
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir_all(dir)?;
+        }
+        Err(e) => return Err(e.into()),
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(dir)?.permissions().mode();
+        if mode & 0o077 != 0 {
+            let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+        }
+    }
+    Ok(())
+}
+
+/// Deterministic (FNV-1a) 32-bit hash of the profile path, hex-encoded. Used
+/// to derive a per-profile keychain service name so `--config-dir` profiles
+/// cannot read or overwrite each other's device identity.
+fn profile_key_for(config_dir: &Path) -> String {
+    let mut h: u32 = 0x811c9dc5;
+    for b in config_dir.to_string_lossy().as_bytes() {
+        h ^= u32::from(*b);
+        h = h.wrapping_mul(0x01000193);
+    }
+    format!("{h:08x}")
+}
+
 impl AppState {
     /// Resolve the config dir from the CLI override or the platform default.
     /// `prefer_biometrics` selects a biometric-gated store when the feature is
     /// available (ignored otherwise).
     pub fn new(config_dir: Option<PathBuf>, prefer_biometrics: bool) -> Result<Self, CliError> {
+        let overridden = config_dir.is_some();
         let config_dir = match config_dir {
             Some(d) => d,
             None => default_config_dir()?,
+        };
+        // The config dir holds the identity file, config (possibly carrying
+        // backend tokens), and the local manifest: create it owner-only.
+        create_private_dir_all(&config_dir)?;
+        let profile_key = if overridden {
+            Some(profile_key_for(&config_dir))
+        } else {
+            None
         };
         Ok(Self {
             store_dir: config_dir.join(STORE_DIR),
             config_path: config_dir.join(CONFIG_FILE),
             config_dir,
             prefer_biometrics,
+            profile_key,
         })
     }
 
@@ -52,6 +162,7 @@ impl AppState {
             store_dir: root.join(STORE_DIR),
             config_path: root.join(CONFIG_FILE),
             prefer_biometrics: false,
+            profile_key: None,
         }
     }
 
@@ -75,12 +186,13 @@ impl AppState {
 
     pub fn save_config(&self, cfg: &Config) -> Result<(), CliError> {
         if let Some(parent) = self.config_path.parent() {
-            std::fs::create_dir_all(parent)?;
+            create_private_dir_all(parent)?;
         }
         let s = toml::to_string_pretty(cfg)
             .map_err(|e| CliError::Plain(format!("config serialize: {e}")))?;
-        std::fs::write(&self.config_path, s)?;
-        Ok(())
+        // config.toml can carry backend options (tokens); keep it private and
+        // write it atomically.
+        secure_write(&self.config_path, s.as_bytes())
     }
 
     /// Build the default starter config for a freshly initialized device.
@@ -103,16 +215,26 @@ impl AppState {
         }
     }
 
+    /// Keychain service name: constant for the default config dir (existing
+    /// installs keep their identity), suffixed with a hash of the path for
+    /// `--config-dir` profiles so profiles cannot clobber each other.
+    fn keychain_service(&self) -> String {
+        match &self.profile_key {
+            None => "config-sync".to_string(),
+            Some(k) => format!("config-sync-profile-{k}"),
+        }
+    }
+
     pub fn secret_store(&self) -> AppStore {
         // Prefer the biometric-gated store when the feature is on and the user
         // hasn't opted out with --no-biometrics.
         #[cfg(feature = "biometric")]
         if self.prefer_biometrics {
-            return AppStore::Biometric(cs_keys::BiometricStore::new("config-sync"));
+            return AppStore::Biometric(cs_keys::BiometricStore::new(self.keychain_service()));
         }
         #[cfg(feature = "keyring-store")]
         {
-            return AppStore::Keyring(cs_keys::KeyringStore::new("config-sync"));
+            return AppStore::Keyring(cs_keys::KeyringStore::new(self.keychain_service()));
         }
         #[allow(unreachable_code)]
         AppStore::File(FileSecretStore::new(self.config_dir.join("identity.bin")))
@@ -226,41 +348,52 @@ impl FileSecretStore {
         Self { path }
     }
 
-    fn load(&self) -> std::collections::HashMap<String, Vec<u8>> {
-        std::fs::read(&self.path)
-            .ok()
-            .and_then(|b| postcard::from_bytes(&b).ok())
-            .unwrap_or_default()
+    /// Load the map. A file that exists but does not parse is a hard error —
+    /// silently treating corruption as absence would invite a re-`init` that
+    /// destroys whatever remained.
+    fn load(&self) -> Result<std::collections::HashMap<String, Vec<u8>>, cs_keys::KeysError> {
+        match std::fs::read(&self.path) {
+            Ok(b) => postcard::from_bytes(&b).map_err(|e| {
+                cs_keys::KeysError::Keychain(format!(
+                    "identity file {} is corrupt ({e}); restore it from a backup",
+                    self.path.display()
+                ))
+            }),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Default::default()),
+            Err(e) => Err(cs_keys::KeysError::Keychain(e.to_string())),
+        }
     }
 
-    fn save(&self, map: &std::collections::HashMap<String, Vec<u8>>) {
-        if let Some(parent) = self.path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(bytes) = postcard::to_allocvec(map) {
-            let _ = std::fs::write(&self.path, bytes);
-        }
+    /// Persist the map 0600 and atomically. Errors propagate: reporting a
+    /// successful `init`/`recover` while the identity never hit disk would
+    /// strand the user.
+    fn save(
+        &self,
+        map: &std::collections::HashMap<String, Vec<u8>>,
+    ) -> Result<(), cs_keys::KeysError> {
+        let bytes =
+            postcard::to_allocvec(map).map_err(|e| cs_keys::KeysError::Keychain(e.to_string()))?;
+        crate::state::secure_write(&self.path, &bytes)
+            .map_err(|e| cs_keys::KeysError::Keychain(format!("identity write: {e}")))
     }
 }
 
 impl SecretStore for FileSecretStore {
     fn put(&self, account: &str, secret: &[u8]) -> Result<(), cs_keys::KeysError> {
-        let mut map = self.load();
+        let mut map = self.load()?;
         map.insert(account.to_string(), secret.to_vec());
-        self.save(&map);
-        Ok(())
+        self.save(&map)
     }
     fn get(&self, account: &str) -> Result<Vec<u8>, cs_keys::KeysError> {
-        self.load()
+        self.load()?
             .get(account)
             .cloned()
             .ok_or(cs_keys::KeysError::NotFound)
     }
     fn delete(&self, account: &str) -> Result<(), cs_keys::KeysError> {
-        let mut map = self.load();
+        let mut map = self.load()?;
         map.remove(account).ok_or(cs_keys::KeysError::NotFound)?;
-        self.save(&map);
-        Ok(())
+        self.save(&map)
     }
 }
 

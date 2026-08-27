@@ -37,6 +37,74 @@ struct HeaderBody {
     wrapped_dek: WrappedKey,
 }
 
+/// Wire-format bounds for the header body. ML-KEM-768 ciphertexts are exactly
+/// 1088 bytes and the wrapped DEK ciphertext is exactly 32 + 16 bytes, but a
+/// little slack keeps the parser decoupled from exact constant sizes.
+const MAX_PQ_CT_LEN: usize = 4096;
+const MAX_WRAPPED_CT_LEN: usize = 256;
+
+/// Read a LEB128 varint (postcard's length prefix encoding), rejecting values
+/// that are malformed or absurdly large for the remaining input.
+fn read_varint(buf: &[u8], pos: &mut usize, max: usize) -> Result<usize, CryptoError> {
+    let mut value: u64 = 0;
+    let mut shift = 0u32;
+    loop {
+        if *pos >= buf.len() {
+            return Err(CryptoError::Truncated);
+        }
+        if shift >= 64 {
+            return Err(CryptoError::Truncated);
+        }
+        let b = buf[*pos];
+        *pos += 1;
+        value |= u64::from(b & 0x7f) << shift;
+        if b & 0x80 == 0 {
+            break;
+        }
+        shift += 7;
+    }
+    if value > max as u64 || value > (buf.len() - *pos) as u64 {
+        return Err(CryptoError::Truncated);
+    }
+    Ok(value as usize)
+}
+
+/// Decode a `HeaderBody` from the exact wire format `postcard::to_allocvec`
+/// produces for it (varint-prefixed Vec fields, fixed-size arrays). Unlike a
+/// serde deserialize, every length is bounds-checked against the remaining
+/// input BEFORE any allocation, so a hostile header cannot request a
+/// multi-gigabyte `Vec::with_capacity` before authentication.
+fn parse_header_body(buf: &[u8]) -> Result<HeaderBody, CryptoError> {
+    let mut pos = 0;
+    let pq_len = read_varint(buf, &mut pos, MAX_PQ_CT_LEN)?;
+    let pq_ct = buf[pos..pos + pq_len].to_vec();
+    pos += pq_len;
+    if buf.len() < pos + 32 {
+        return Err(CryptoError::Truncated);
+    }
+    let mut classic_eph = [0u8; 32];
+    classic_eph.copy_from_slice(&buf[pos..pos + 32]);
+    pos += 32;
+    // WrappedKey { nonce: [u8; 24], ct: Vec<u8> }
+    if buf.len() < pos + 24 {
+        return Err(CryptoError::Truncated);
+    }
+    let mut nonce = [0u8; 24];
+    nonce.copy_from_slice(&buf[pos..pos + 24]);
+    pos += 24;
+    let ct_len = read_varint(buf, &mut pos, MAX_WRAPPED_CT_LEN)?;
+    let ct = buf[pos..pos + ct_len].to_vec();
+    pos += ct_len;
+    if pos != buf.len() {
+        return Err(CryptoError::Truncated);
+    }
+    Ok(HeaderBody {
+        pq_ct,
+        classic_eph,
+        wrapped_dek: WrappedKey { nonce, ct },
+    })
+}
+
 fn random_nonce24() -> Result<[u8; 24], CryptoError> {
     let mut nonce = [0u8; 24];
     getrandom::fill(&mut nonce).map_err(|_| CryptoError::Encode("RNG failure".into()))?;
@@ -103,8 +171,7 @@ pub fn open(
     if input.header[6] != VERSION {
         return Err(CryptoError::BadMagic);
     }
-    let hb: HeaderBody =
-        postcard::from_bytes(&input.header[7..]).map_err(|_| CryptoError::Truncated)?;
+    let hb: HeaderBody = parse_header_body(&input.header[7..])?;
     if input.body.len() < 24 {
         return Err(CryptoError::Truncated);
     }
@@ -279,5 +346,57 @@ mod tests {
             &sk,
         );
         assert!(matches!(r, Err(CryptoError::BadMagic)));
+    }
+
+    #[test]
+    fn manual_parser_matches_postcard_wire_format() {
+        // The bounded parser must decode exactly what postcard encodes.
+        let hb = HeaderBody {
+            pq_ct: vec![7u8; 1088],
+            classic_eph: [9u8; 32],
+            wrapped_dek: WrappedKey {
+                nonce: [1u8; 24],
+                ct: vec![5u8; 48],
+            },
+        };
+        let encoded = postcard::to_allocvec(&hb).unwrap();
+        let parsed = parse_header_body(&encoded).unwrap();
+        assert_eq!(parsed.pq_ct, hb.pq_ct);
+        assert_eq!(parsed.classic_eph, hb.classic_eph);
+        assert_eq!(parsed.wrapped_dek.nonce, hb.wrapped_dek.nonce);
+        assert_eq!(parsed.wrapped_dek.ct, hb.wrapped_dek.ct);
+    }
+
+    #[test]
+    fn hostile_length_prefixes_do_not_allocate() {
+        // varint claiming a u64::MAX-sized pq_ct in a tiny buffer must fail
+        // fast without attempting the allocation.
+        let hostile = {
+            let mut b = vec![0xff; 10]; // all-continuation bytes then terminator
+            b[9] = 0x01;
+            b
+        };
+        assert!(matches!(
+            parse_header_body(&hostile),
+            Err(CryptoError::Truncated)
+        ));
+        // Valid varint but larger than the remaining input.
+        let mut short = vec![0x40]; // len = 64
+        short.extend_from_slice(&[0u8; 4]); // only 4 bytes follow
+        assert!(parse_header_body(&short).is_err());
+        // Trailing garbage is rejected (matches postcard's exact-consume).
+        let (pk, _) = generate_recipient_keypair();
+        let (_wk, ct) = crate::kem::hybrid_encapsulate(&pk).unwrap();
+        let hb = HeaderBody {
+            pq_ct: ct.pq_ct,
+            classic_eph: ct.classic_eph,
+            wrapped_dek: WrappedKey {
+                nonce: [0u8; 24],
+                ct: vec![0u8; 48],
+            },
+        };
+        let mut encoded = postcard::to_allocvec(&hb).unwrap();
+        encoded.push(0x00);
+        assert!(parse_header_body(&encoded).is_err());
     }
 }

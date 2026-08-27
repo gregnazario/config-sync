@@ -22,6 +22,30 @@ pub struct WebDavStore {
 }
 
 impl WebDavStore {
+    /// Build a store with HTTP Basic credentials and a hardened client
+    /// (same-origin redirect policy). Prefer this over [`WebDavStore::new`]
+    /// with a default-constructed client, which would follow redirects to
+    /// arbitrary origins and schemes.
+    pub fn new_basic(
+        username: &str,
+        password: &str,
+        base_url: impl Into<String>,
+    ) -> Result<Self, StorageError> {
+        use base64::Engine as _;
+        let mut headers = reqwest::header::HeaderMap::new();
+        let creds =
+            base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"));
+        let value = reqwest::header::HeaderValue::from_str(&format!("Basic {creds}"))
+            .map_err(|e| StorageError::Backend(format!("invalid credentials: {e}")))?;
+        headers.insert(reqwest::header::AUTHORIZATION, value);
+        let http = reqwest::Client::builder()
+            .default_headers(headers)
+            .redirect(crate::http_util::same_origin_policy())
+            .build()
+            .map_err(|e| StorageError::Backend(format!("http client build: {e}")))?;
+        Self::new(http, base_url)
+    }
+
     pub fn new(http: reqwest::Client, base_url: impl Into<String>) -> Result<Self, StorageError> {
         let mut base_url = base_url.into();
         if !base_url.ends_with('/') {
@@ -104,10 +128,14 @@ impl RemoteStore for WebDavStore {
             .map_err(|e| StorageError::Backend(e.to_string()))?;
         let status = resp.status();
         if !status.is_success() {
-            let b = resp.text().await.unwrap_or_default();
+            let b = crate::http_util::read_error_body(resp).await;
             return Err(map_http_err(status, b));
         }
-        let text = resp.text().await.unwrap_or_default();
+        // Success bodies get the full cap: listings legitimately exceed the
+        // 8 KiB error-body cap.
+        let text = crate::http_util::read_body_capped(resp, crate::http_util::MAX_RESPONSE_BYTES)
+            .await
+            .map(|b| String::from_utf8_lossy(&b).into_owned())?;
         Ok(parse_multistatus(&text, &self.base_url, prefix))
     }
 
@@ -120,14 +148,10 @@ impl RemoteStore for WebDavStore {
             .map_err(|e| StorageError::Backend(e.to_string()))?;
         let status = resp.status();
         if !status.is_success() {
-            let b = resp.text().await.unwrap_or_default();
+            let b = crate::http_util::read_error_body(resp).await;
             return Err(map_http_err(status, b));
         }
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
-        Ok(bytes)
+        crate::http_util::read_body_capped(resp, crate::http_util::MAX_RESPONSE_BYTES).await
     }
 
     async fn get_range(&self, name: &str, range: Range<u64>) -> Result<Bytes, StorageError> {
@@ -143,14 +167,10 @@ impl RemoteStore for WebDavStore {
             .map_err(|e| StorageError::Backend(e.to_string()))?;
         let status = resp.status();
         if !status.is_success() {
-            let b = resp.text().await.unwrap_or_default();
+            let b = crate::http_util::read_error_body(resp).await;
             return Err(map_http_err(status, b));
         }
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| StorageError::Backend(e.to_string()))?;
-        Ok(bytes)
+        crate::http_util::read_body_capped(resp, crate::http_util::MAX_RESPONSE_BYTES).await
     }
 
     async fn put(
@@ -174,7 +194,7 @@ impl RemoteStore for WebDavStore {
             .map_err(|e| StorageError::Backend(e.to_string()))?;
         let status = resp.status();
         if !status.is_success() {
-            let b = resp.text().await.unwrap_or_default();
+            let b = crate::http_util::read_error_body(resp).await;
             return Err(map_http_err(status, b));
         }
         Ok(Self::etag_of(&resp))
@@ -189,11 +209,11 @@ impl RemoteStore for WebDavStore {
             .map_err(|e| StorageError::Backend(e.to_string()))?;
         let status = resp.status();
         if status.as_u16() == 404 {
-            let b = resp.text().await.unwrap_or_default();
+            let b = crate::http_util::read_error_body(resp).await;
             return Err(StorageError::NotFound(b));
         }
         if !status.is_success() {
-            let b = resp.text().await.unwrap_or_default();
+            let b = crate::http_util::read_error_body(resp).await;
             return Err(map_http_err(status, b));
         }
         Ok(())

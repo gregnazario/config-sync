@@ -157,6 +157,9 @@ impl MnemonicProvider {
                 )
                 .map_err(|_| KeysError::Crypto(cs_crypto::CryptoError::AuthFailed))?,
         );
+        if pt.len() != 32 {
+            return Err(KeysError::Crypto(cs_crypto::CryptoError::KeyLength));
+        }
         let mut out = [0u8; 32];
         out.copy_from_slice(&pt);
         Ok(out)

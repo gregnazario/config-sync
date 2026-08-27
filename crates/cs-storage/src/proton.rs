@@ -17,6 +17,7 @@
 
 use crate::{Capabilities, Etag, ObjectMeta, RemoteStore, StorageError};
 use async_trait::async_trait;
+use base64::Engine as _;
 use bytes::Bytes;
 use serde::Deserialize;
 use std::ops::Range;
@@ -31,25 +32,16 @@ pub struct ProtonDriveStore {
 impl ProtonDriveStore {
     /// Build a store with the given OAuth/session bearer token. `base_url` is
     /// the gateway root (everything is stored under `{base_url}/nodes/...`).
-    pub fn new(bearer_token: impl Into<String>, base_url: impl Into<String>) -> Self {
-        let http = reqwest::Client::builder()
-            .default_headers({
-                let mut h = reqwest::header::HeaderMap::new();
-                if let Ok(v) = reqwest::header::HeaderValue::from_str(&format!(
-                    "Bearer {}",
-                    bearer_token.into()
-                )) {
-                    h.insert(reqwest::header::AUTHORIZATION, v);
-                }
-                h
-            })
-            .build()
-            .unwrap_or_default();
+    pub fn new(
+        bearer_token: impl Into<String>,
+        base_url: impl Into<String>,
+    ) -> Result<Self, StorageError> {
+        let http = crate::http_util::authed_client(&bearer_token.into())?;
         let mut base_url = base_url.into();
         while base_url.ends_with('/') {
             base_url.pop();
         }
-        Self { http, base_url }
+        Ok(Self { http, base_url })
     }
 
     fn node_url(&self, name: &str) -> String {
@@ -70,7 +62,9 @@ struct NodeResp {
     /// Monotonic per-node revision; used as the ETag.
     #[serde(default)]
     revision: u64,
-    /// Optional content (present on GET; absent on metadata-only calls).
+    /// Optional base64-encoded content (present on GET; absent on
+    /// metadata-only calls). Binary ciphertext is not valid UTF-8, so node
+    /// content is always transported base64-encoded.
     #[serde(default)]
     content: Option<String>,
     #[serde(default)]
@@ -132,9 +126,12 @@ impl RemoteStore for ProtonDriveStore {
             .map_err(net_err)?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
-        let v: ListResp = resp.json().await.map_err(net_err)?;
+        let v: ListResp = crate::http_util::read_json_capped(resp).await?;
         Ok(v.nodes
             .into_iter()
             .map(|n| ObjectMeta {
@@ -155,13 +152,19 @@ impl RemoteStore for ProtonDriveStore {
             .map_err(net_err)?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
-        let v: NodeResp = resp.json().await.map_err(net_err)?;
+        let v: NodeResp = crate::http_util::read_json_capped(resp).await?;
         let content = v
             .content
             .ok_or_else(|| StorageError::Backend("node has no content".into()))?;
-        Ok(Bytes::from(content.into_bytes()))
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(content.as_bytes())
+            .map_err(|e| StorageError::Backend(format!("node content is not valid base64: {e}")))?;
+        Ok(Bytes::from(bytes))
     }
 
     async fn get_range(&self, name: &str, range: Range<u64>) -> Result<Bytes, StorageError> {
@@ -183,20 +186,29 @@ impl RemoteStore for ProtonDriveStore {
         data: Bytes,
         if_match: Option<&Etag>,
     ) -> Result<Etag, StorageError> {
+        let encoded = base64::engine::general_purpose::STANDARD.encode(data.as_ref());
         let mut req = self
             .http
             .put(self.node_url(name))
-            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
-            .body(data);
+            .header(reqwest::header::CONTENT_TYPE, "text/plain; charset=utf-8")
+            .body(encoded);
         if let Some(want) = if_match {
-            req = req.header(reqwest::header::IF_MATCH, want.0.clone());
+            if want.0.is_empty() {
+                // "Must be absent" for the first-ever write.
+                req = req.header(reqwest::header::IF_NONE_MATCH, "*");
+            } else {
+                req = req.header(reqwest::header::IF_MATCH, want.0.clone());
+            }
         }
         let resp = req.send().await.map_err(net_err)?;
         let status = resp.status();
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
-        let v: NodeResp = resp.json().await.map_err(net_err)?;
+        let v: NodeResp = crate::http_util::read_json_capped(resp).await?;
         Ok(Etag(v.revision.to_string()))
     }
 
@@ -209,11 +221,14 @@ impl RemoteStore for ProtonDriveStore {
             .map_err(net_err)?;
         let status = resp.status();
         if status.as_u16() == 404 {
-            let b = resp.text().await.unwrap_or_default();
+            let b = crate::http_util::read_error_body(resp).await;
             return Err(StorageError::NotFound(b));
         }
         if !status.is_success() {
-            return Err(map_err(status, resp.text().await.unwrap_or_default()));
+            return Err(map_err(
+                status,
+                crate::http_util::read_error_body(resp).await,
+            ));
         }
         Ok(())
     }

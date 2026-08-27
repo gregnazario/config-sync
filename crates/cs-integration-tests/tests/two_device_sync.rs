@@ -3,7 +3,7 @@
 //! edit resolved by each conflict policy.
 
 use cs_config::ConflictPolicy;
-use cs_crypto::generate_recipient_keypair;
+use cs_crypto::{derive_recipient_keypair, generate_rik, ManifestSigningKey};
 use cs_manifest::{ConfigPath, DeviceId, Manifest};
 use cs_storage::LocalFs;
 use cs_sync::{sync, ConflictChoice, FixedResolver, ManagedFile, SyncContext};
@@ -35,7 +35,11 @@ fn read_file(work: &TempDir, rel: &str) -> Vec<u8> {
 async fn two_devices_converge_after_independent_edits() {
     let shared = TempDir::new().unwrap();
     let store = LocalFs::new(shared.path());
-    let (pk, sk) = generate_recipient_keypair();
+    let (pk, sk, signer) = {
+        let rik = generate_rik().unwrap();
+        let (pk, sk) = derive_recipient_keypair(&rik);
+        (pk, sk, ManifestSigningKey::derive_from_rik(&rik))
+    };
     let dev_a = DeviceId::new("A");
     let dev_b = DeviceId::new("B");
 
@@ -50,6 +54,7 @@ async fn two_devices_converge_after_independent_edits() {
         files: &files_a,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: None,
         now: SystemTime::UNIX_EPOCH,
     };
@@ -63,6 +68,7 @@ async fn two_devices_converge_after_independent_edits() {
         files: &files_b,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: None,
         now: SystemTime::UNIX_EPOCH,
     };
@@ -80,6 +86,7 @@ async fn two_devices_converge_after_independent_edits() {
         files: &files_a,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: None,
         now: now_a,
     };
@@ -93,6 +100,7 @@ async fn two_devices_converge_after_independent_edits() {
         files: &files_b,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: None,
         now: now_b,
     };
@@ -108,6 +116,7 @@ async fn two_devices_converge_after_independent_edits() {
         files: &files_a,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: None,
         now: SystemTime::UNIX_EPOCH + Duration::from_secs(3),
     };
@@ -118,6 +127,7 @@ async fn two_devices_converge_after_independent_edits() {
         files: &files_b,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: None,
         now: SystemTime::UNIX_EPOCH + Duration::from_secs(4),
     };
@@ -150,7 +160,11 @@ async fn two_devices_converge_after_independent_edits() {
 async fn prompt_policy_uses_resolver() {
     let shared = TempDir::new().unwrap();
     let store = LocalFs::new(shared.path());
-    let (pk, sk) = generate_recipient_keypair();
+    let (pk, sk, signer) = {
+        let rik = generate_rik().unwrap();
+        let (pk, sk) = derive_recipient_keypair(&rik);
+        (pk, sk, ManifestSigningKey::derive_from_rik(&rik))
+    };
     let dev_a = DeviceId::new("A");
     let dev_b = DeviceId::new("B");
 
@@ -165,6 +179,7 @@ async fn prompt_policy_uses_resolver() {
         files: &files_a,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: None,
         now: SystemTime::UNIX_EPOCH,
     };
@@ -176,6 +191,7 @@ async fn prompt_policy_uses_resolver() {
         files: &files_b,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: None,
         now: SystemTime::UNIX_EPOCH,
     };
@@ -190,6 +206,7 @@ async fn prompt_policy_uses_resolver() {
         files: &files_a,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: None,
         now: SystemTime::UNIX_EPOCH,
     };
@@ -202,6 +219,7 @@ async fn prompt_policy_uses_resolver() {
         files: &files_b,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: Some(&keep_remote),
         now: SystemTime::UNIX_EPOCH,
     };
@@ -221,7 +239,11 @@ async fn prompt_policy_uses_resolver() {
 async fn new_file_on_one_device_pulls_to_the_other() {
     let shared = TempDir::new().unwrap();
     let store = LocalFs::new(shared.path());
-    let (pk, sk) = generate_recipient_keypair();
+    let (pk, sk, signer) = {
+        let rik = generate_rik().unwrap();
+        let (pk, sk) = derive_recipient_keypair(&rik);
+        (pk, sk, ManifestSigningKey::derive_from_rik(&rik))
+    };
 
     let work_a = TempDir::new().unwrap();
     let work_b = TempDir::new().unwrap();
@@ -234,6 +256,7 @@ async fn new_file_on_one_device_pulls_to_the_other() {
         files: &files_a,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: None,
         now: SystemTime::UNIX_EPOCH,
     };
@@ -246,6 +269,7 @@ async fn new_file_on_one_device_pulls_to_the_other() {
         files: &files_b,
         recip_keys: &pk,
         recip_secrets: &sk,
+        manifest_signer: &signer,
         resolver: None,
         now: SystemTime::UNIX_EPOCH,
     };
