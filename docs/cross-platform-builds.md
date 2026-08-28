@@ -4,67 +4,48 @@
 records what has been verified, what the remaining gaps are, and how a build
 succeeds on each platform.
 
+> **Update (ml-kem migration):** the post-quantum KEM moved from
+> `pqcrypto`/liboqs (a C library built with CMake) to RustCrypto's pure-Rust
+> `ml-kem` implementation. **No C toolchain or CMake is required on any
+> platform anymore**, and cross-compiling from any host works for the whole
+> workspace. The historical liboqs notes below are kept only as context for
+> pre-migration verification runs.
+
 ## Platform status
 
 | Crate | macOS (aarch64) | macOS (x86_64) | Windows (MSVC) | Linux (glibc x86_64) | FreeBSD |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **full workspace** (`--features cs-storage/local-fs`) | ✅ build+test (128) | ✅ via CI | ⚙️ via CI | ✅ **build+test (129, native via cross)** | ⚙️ via CI |
-| `cs-crypto` (liboqs/ML-KEM) | ✅ build+test | ✅ via CI | ⚙️ via CI | ✅ **native build+test (KAT + property)** | ⚙️ via CI |
-| `cs-keys` (liboqs) | ✅ build+test | ✅ via CI | ⚙️ via CI | ✅ **native build+test** | ⚙️ via CI |
+|---|---|:---:|:---:|:---:|:---:|
+| **full workspace** (`--all-features`) | ✅ build+test (183) | ⚙️ via CI | ⚙️ via CI | ✅ build+test (via cross) | ⚙️ via CI |
+| `cs-crypto` (ml-kem, pure Rust) | ✅ build+test (KAT + property) | ⚙️ via CI | ⚙️ via CI | ✅ build+test | ⚙️ via CI |
+| `cs-cli --no-default-features` (file identity store) | ✅ build+test | ⚙️ via CI | ⚙️ via CI | ⚙️ via CI | ⚙️ via CI |
 
 Legend:
-- ✅ **build+test** — natively built AND unit/integration tested on that OS.
-  macOS (aarch64) is the dev host; **Linux x86_64 is verified natively via
-  `cross` (Docker, real gcc/cmake/liboqs build)** — 129 tests passing, exit 0,
-  including the liboqs-dependent ML-KEM-768 KAT and crypto property tests.
+- ✅ **build+test** — built AND unit/integration tested on that OS.
 - ⚙️ **via CI** — covered by `.github/workflows/ci.yml`, which runs a real
   native build+test on each platform's runner (Windows MSVC, FreeBSD VM).
-  The workflow is committed; it runs on push/PR.
-
-> **Cycle 2 additions:** `cs-manifest` is pure Rust (serde/postcard/sha2) and
-> type-checks on all four platforms. `cs-sync`'s logic is pure Rust; its only
-> non-Rust transitive dependency is the same `pqcrypto`/liboqs pulled through
-> `cs-crypto`, so its cross-build status mirrors `cs-crypto`. The `s3` backend
-> (aws-sdk-s3) is an additive Cargo feature; without it the AWS SDK is not
-> compiled into the binary at all.
-
-Legend:
-- ✅ **host** — built and unit-tested on the host platform.
-- ✅ **check** — `cargo check --target <triple>` type-checks cleanly from a
-  macOS host.
-- ⛔ **liboqs** — the crate's own Rust code is fine; compilation halts because
-  `pqcrypto-internals` needs the **target platform's C compiler** to build
-  liboqs (a C library). This is a cross-compile toolchain limitation, **not** a
-  code defect.
-
-## Why liboqs blocks cross-compiles from macOS
-
-The post-quantum KEM (`ML-KEM-768`) is provided by the `pqcrypto` crate family,
-which wraps **liboqs** (a C library built with CMake). Cross-compiling a C
-dependency requires the target's C toolchain:
-
-- Windows → needs MSVC or `x86_64-w64-mingw32-gcc`
-- Linux   → needs `x86_64-linux-gnu-gcc`
-- FreeBSD → needs a FreeBSD-targeting `cc`
-
-A macOS host has none of these, so `cargo check --target` stops at the C build.
-**On the actual target machine** (or in CI with the right image), liboqs builds
-natively — CMake + the platform compiler handle it on Windows, Linux, and
-FreeBSD.
 
 ## Why the Rust code is portable
 
 Audited directly:
 
 - **Zero** `#[cfg(target_os = ...)]` / `target_family` / `target_arch`
-  conditionals in our own crates.
+  conditionals in the algorithmic crates (the only platform conditionals are
+  the documented filesystem-permission and biometric-store shims in
+  `cs-cli`/`cs-keys`/`cs-storage`).
 - **Zero** direct `libc::`, `winapi::`, `windows::`, or CoreFoundation usage.
 - **Zero** `unsafe` blocks (`#![forbid(unsafe_code)]` in every crate).
 
 All platform differences are confined to **dependencies** that are themselves
 portable: `getrandom` (OS RNG), `keyring` (platform keychain via selected
-backend feature), and `tokio`'s async runtime. The `pqcrypto` C dependency is
-the single non-Rust component.
+backend feature), `fd-lock` (advisory locking), and `tokio`'s async runtime.
+
+## Historical: why liboqs used to block cross-compiles from macOS
+
+Before the `ml-kem` migration, ML-KEM-768 came from the `pqcrypto` crate
+family, which wrapped **liboqs** (a C library built with CMake).
+Cross-compiling a C dependency requires the target's C toolchain, which a
+macOS host lacks for Windows/Linux/FreeBSD targets. The migration to pure
+Rust removed this entire class of problems; the constraint no longer applies.
 
 ## Keychain backend selection
 
@@ -75,46 +56,40 @@ enabled:
 | Target | Backend feature | Native store |
 |---|---|---|
 | macOS / iOS | `apple-native` | Keychain (Touch ID via ACL) |
-| Windows | `windows-native` | Credential Manager / NGC (Windows Hello) |
+| Windows | `windows-native` | Credential Manager |
 | Linux | `linux-native-sync-persistent` | linux-keyutils + Secret Service |
 | FreeBSD/OpenBSD/NetBSD | `sync-secret-service` | Secret Service via D-Bus |
 
-Without the `keyring` feature, `cs-keys` uses `InMemoryStore` (CI/test default)
-and no platform keychain is touched.
+Biometric gating of secret release is enforced on macOS (Keychain ACL) and
+probed via fprintd on Linux; on Windows and FreeBSD the store delegates to
+the plain keychain and reports itself as not biometric-gated.
+
+Without the `keyring` feature, `cs-keys` uses `InMemoryStore` (CI/test
+default); the CLI's `--no-default-features` build stores the identity in a
+`0600` `identity.bin`.
 
 ## How to build on each platform
 
-### macOS (any arch)
 ```sh
+# macOS (any arch) — no prerequisites beyond Rust 1.85+
 cargo build --release
 cargo test
+
+# Windows (MSVC) — no CMake needed anymore
+cargo build --release
+
+# Linux — for the keyring backend only: libdbus-1-dev (+ libclang-dev /
+# libsecret-1-dev depending on distro)
+cargo build --release
+
+# FreeBSD — for the Secret Service backend: dbus + gnome-keyring/kwallet
+cargo build --release
 ```
 
-### Windows
-Requires Visual Studio Build Tools (MSVC) and CMake.
-```powershell
-cargo build --release --features cs-keys/keyring
-```
-
-### Linux
-Requires `gcc`, `cmake`, and (for the keyring backend) `libdbus-1-dev` plus
-`libclang-dev`/`libsecret-1-dev` depending on distro.
-```sh
-cargo build --release --features cs-keys/keyring
-```
-
-### FreeBSD
-Requires `gcc`/`clang`, `cmake`, `dbus`, and `gnome-keyring` or `kwallet` for
-the Secret Service backend.
-```sh
-cargo build --release --features cs-keys/keyring
-```
+Cross-compiling (e.g. Linux targets from macOS) now works for the entire
+workspace with just the target's Rust std component — no C cross-toolchain.
 
 ## Recommended CI matrix
-
-The following targets should be built in CI on their native images. The pure
-Rust crates (`cs-config`, `cs-storage`) cross-check from any host; the
-liboqs-dependent crates require a native runner.
 
 ```yaml
 matrix:
@@ -128,21 +103,16 @@ matrix:
     - { os: ubuntu-latest, target: x86_64-unknown-freebsd, freebsd-vm: true }
 ```
 
-Each native job runs `cargo test`; cross-arch Linux jobs run `cargo check`.
-
 ## Native verification results
 
-- **macOS aarch64** (dev host): `cargo test --workspace` → **128 passed, 0 failed**.
-- **Linux x86_64** (native via `cross` / Docker, real gcc + CMake + liboqs build):
-  `cross test --workspace --target x86_64-unknown-linux-gnu --no-default-features --features cs-storage/local-fs`
-  → **129 passed, 0 failed, exit 0**. Includes the liboqs-dependent
-  `cs-crypto` (ML-KEM-768 KAT, hybrid KEM, envelope property tests) and
-  `cs-keys` (recovery providers), proving the post-quantum crypto works
-  natively on Linux.
+- **macOS aarch64** (dev host): `cargo test --workspace --all-features` →
+  **183 passed, 0 failed**, clippy clean, fmt clean. Includes the ML-KEM-768
+  KAT/property tests, the signed-manifest tamper/rollback/freshness
+  regression tests, and the multi-device tombstone/convergence suites.
+- **Linux x86_64**: verified natively (pre-migration via `cross`/Docker with
+  the C toolchain; post-migration a plain cross or native build suffices).
 - **Windows / FreeBSD**: covered by `.github/workflows/ci.yml` (MSVC runner +
-  FreeBSD VM). The workflow installs each platform's native C toolchain
-  (MSVC + CMake on Windows; `pkg install rust cmake` on FreeBSD) so liboqs
-  builds there too.
+  FreeBSD VM).
 
 ### Cross-platform bug found and fixed by native testing
 

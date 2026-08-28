@@ -19,7 +19,23 @@ ever writes ciphertext.
 
 The blobs are always ciphertext (post-quantum hybrid ML-KEM-768 + X25519 +
 XChaCha20-Poly1305), so the provider never sees plaintext — even though the
-provider does the transporting.
+provider does the transporting. The same goes for the store's `manifest.json`:
+it is a sealed, Ed25519-signed frame whose contents (file paths, hashes,
+vector clocks) the provider cannot read or forge.
+
+### What you'll see inside the store folder
+
+```
+manifest.json          # sealed + signed sync manifest (opaque ciphertext frame)
+blobs/<hex>            # encrypted file headers, content-addressed
+blobs/<hex>.body       # encrypted file bodies
+blobs/<hex>.body.version  # local-fs CAS sidecars (version counters)
+.cas.lock              # local-fs cross-process write lock (safe to ignore)
+```
+
+Don't edit, deduplicate, or "clean up" any of these — partial stores fail
+closed on purpose. Temp files (`.*.tmp`) appear transiently during writes and
+are renamed away atomically.
 
 ## Configure it
 

@@ -1,5 +1,12 @@
 # Cross-Platform Native Verification Results
 
+> **Historical record:** these runs predate the `ml-kem` migration (the KEM
+> was then provided by `pqcrypto`/liboqs, a C dependency). The workspace is
+> now pure Rust — no liboqs, CMake, or C compiler is involved on any platform
+> — but the verification evidence below remains accurate as a snapshot of
+> that era. Current counts: 183 tests (`--workspace --all-features`) on the
+> dev host.
+
 The objective requires config-sync to work on **Mac, Windows, most Linux,
 FreeBSD**. This document records the real native build+test evidence for each.
 
