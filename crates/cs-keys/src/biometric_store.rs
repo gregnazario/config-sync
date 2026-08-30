@@ -39,7 +39,7 @@ impl BiometricStore {
         }
         #[cfg(target_os = "linux")]
         {
-            fprintd_available()
+            imp::fprintd_available()
         }
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {
@@ -253,7 +253,7 @@ mod imp {
 
     /// Best-effort probe of whether the fprintd manager object is reachable
     /// on the system bus. Cached for the process lifetime.
-    fn fprintd_available() -> bool {
+    pub(super) fn fprintd_available() -> bool {
         use std::sync::OnceLock;
         static AVAILABLE: OnceLock<bool> = OnceLock::new();
         *AVAILABLE.get_or_init(|| {
