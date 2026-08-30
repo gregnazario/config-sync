@@ -45,11 +45,11 @@ git clone https://github.com/gregnazario/config-sync.git
 cd config-sync
 
 # Requires: Rust 1.85+ (ML-KEM is pure Rust; no C toolchain needed)
-cargo build --release
+cargo build --release --locked
 # Binary: target/release/config-sync
 
 # Optional cloud backends:
-cargo build --release --features cs-storage/webdav,cs-storage/gdrive,cs-storage/onedrive
+cargo build --release --locked --features cs-storage/webdav,cs-storage/gdrive,cs-storage/onedrive
 ```
 
 ### Planned / not yet published
