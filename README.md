@@ -36,36 +36,14 @@ WebDAV, or a local folder). Your cloud provider never sees plaintext.
 
 ## Install
 
-### One-liner (any platform with Rust)
+config-sync is **not yet published** -- there is no crate on crates.io, no
+release tags, and no packages in Homebrew, WinGet, Chocolatey, AUR, mise, or
+any other package manager. For now, build from source:
 
 ```sh
-cargo binstall config-sync
-```
+git clone https://github.com/gregnazario/config-sync.git
+cd config-sync
 
-### Package managers
-
-| Platform | Method | Command |
-|---|---|---|
-| Any (Rust toolchain) | cargo-binstall | `cargo binstall config-sync` |
-| macOS / Linux | Homebrew | `brew tap gregnazario/config-sync && brew install config-sync` |
-| Debian / Ubuntu | apt (.deb) | `sudo dpkg -i config-sync_*_amd64.deb` |
-| Fedora / RHEL / openSUSE | dnf / zypper (.rpm) | `sudo dnf install config-sync-*.rpm` or `sudo zypper install config-sync-*.rpm` |
-| Alpine | apk | `apk add --allow-untrusted config-sync-*.apk` |
-| Void Linux | xbps | `xbps-install config-sync` |
-| Arch Linux | AUR | `yay -S config-sync-bin` |
-| Gentoo | Portage (ebuild) | `emerge config-sync-bin` |
-| Any (mise) | mise | `mise use -g ubi:gregnazario/config-sync` |
-| Windows | Chocolatey | `choco install config-sync` |
-| Windows | WinGet | `winget install gregnazario.config-sync` |
-| Windows | Scoop | `scoop install config-sync` |
-| NixOS | Nix | `nix run github:gregnazario/config-sync` |
-| Linux (portable) | Flatpak | `flatpak install config-sync` |
-| Linux (portable) | Snap | `sudo snap install config-sync --classic` |
-| Linux (portable) | AppImage | `chmod +x config-sync-*.AppImage && ./config-sync-*.AppImage` |
-
-### Build from source
-
-```sh
 # Requires: Rust 1.85+ (ML-KEM is pure Rust; no C toolchain needed)
 cargo build --release
 # Binary: target/release/config-sync
@@ -73,6 +51,14 @@ cargo build --release
 # Optional cloud backends:
 cargo build --release --features cs-storage/webdav,cs-storage/gdrive,cs-storage/onedrive
 ```
+
+### Planned / not yet published
+
+Packaging recipes for a range of platforms and package managers (Homebrew,
+WinGet, Chocolatey, Scoop, AUR, Nix, Flatpak, Snap, AppImage, and more) live
+under [`packaging/`](packaging/), but none are reachable through a package
+manager yet. Official release binaries and registry publishing are planned for
+a future release.
 
 ## Quick start
 
