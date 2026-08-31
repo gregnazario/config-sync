@@ -11,7 +11,19 @@ if ! command -v apt-get >/dev/null 2>&1; then
   exit 1
 fi
 
-sudo apt-get update
+# Run privileged commands directly as root; otherwise require sudo.
+as_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+  else
+    echo "install-native-deps.sh: not running as root and sudo is not installed; re-run as root." >&2
+    exit 1
+  fi
+}
+
+as_root apt-get update
 # C toolchain + CMake + pkg-config for the liboqs-based PQ-crypto crates,
 # libdbus for the default keyring backend, libclang for bindgen.
-sudo apt-get install -y cmake build-essential pkg-config libdbus-1-dev libclang-dev
+as_root apt-get install -y cmake build-essential pkg-config libdbus-1-dev libclang-dev
