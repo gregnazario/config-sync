@@ -52,6 +52,13 @@ cargo build --release --locked
 cargo build --release --locked --features cs-storage/webdav,cs-storage/gdrive,cs-storage/onedrive
 ```
 
+> **Note:** `--locked` builds against the `Cargo.lock` committed to the
+> repository, so a fresh clone reproduces exactly the dependency graph that
+> CI tests. If the lock file has drifted (the build fails with `the lock
+> file ... needs to be updated but --locked was passed`), run `cargo update`
+> and commit the refreshed `Cargo.lock` — this also re-resolves the optional
+> `cs-storage` dependencies required by the `--features` command above.
+
 ### Planned / not yet published
 
 Packaging recipes for a range of platforms and package managers (Homebrew,
