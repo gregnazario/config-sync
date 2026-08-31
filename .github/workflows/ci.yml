@@ -86,6 +86,28 @@ jobs:
       - name: fmt
         run: cargo fmt --all -- --check
 
+  # ---- Documented install commands (README "Install") --------------------
+  # Runs the two commands from the README verbatim with --locked so any drift
+  # between the committed Cargo.lock and the manifests (including the optional
+  # cs-storage backend dependencies) fails CI instead of failing for users
+  # following the documented install path.
+  install-docs:
+    name: README install commands (--locked)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - name: Install native build deps (gcc, cmake, dbus for keyring backend)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential pkg-config libdbus-1-dev libclang-dev
+      - name: Default build (README install command)
+        run: cargo build --release --locked
+      - name: Optional cloud backends build (README install command)
+        run: cargo build --release --locked --features cs-storage/webdav,cs-storage/gdrive,cs-storage/onedrive
+
   # ---- FreeBSD (x86_64) --------------------------------------------------
   # GitHub has no FreeBSD runner; build+test inside a FreeBSD VM.
   freebsd:
