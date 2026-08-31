@@ -88,13 +88,15 @@ jobs:
   # Runs the two commands from the README verbatim with --locked so any drift
   # between the committed Cargo.lock and the manifests (including the optional
   # cs-storage backend dependencies) fails CI instead of failing for users
-  # following the documented install path.
+  # following the documented install path. The toolchain is pinned to the
+  # documented Rust 1.85 minimum so docs and CI cannot drift apart on
+  # compiler requirements; stable stays in the other jobs for clippy/fmt.
   install-docs:
     name: README install commands (--locked)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.85
         with:
           targets: x86_64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
