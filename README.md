@@ -44,7 +44,12 @@ any other package manager. For now, build from source:
 git clone https://github.com/gregnazario/config-sync.git
 cd config-sync
 
-# Requires: Rust 1.85+ (ML-KEM is pure Rust; no C toolchain needed)
+# Requires: Rust 1.85+, plus native build tools — a C toolchain, CMake, and
+#   pkg-config (the liboqs-based PQ-crypto crates and the default keyring
+#   backend compile/link native code):
+#   Debian/Ubuntu: sudo apt-get install -y cmake build-essential pkg-config libdbus-1-dev libclang-dev
+#   macOS: Xcode command line tools, then: brew install cmake
+#   Windows: MSVC Build Tools + CMake
 cargo build --release --locked
 # Binary: target/release/config-sync
 
@@ -54,10 +59,18 @@ cargo build --release --locked --features cs-storage/webdav,cs-storage/gdrive,cs
 
 > **Note:** `--locked` builds against the `Cargo.lock` committed to the
 > repository, so a fresh clone reproduces exactly the dependency graph that
-> CI tests. If the lock file has drifted (the build fails with `the lock
-> file ... needs to be updated but --locked was passed`), run `cargo update`
-> and commit the refreshed `Cargo.lock` — this also re-resolves the optional
-> `cs-storage` dependencies required by the `--features` command above.
+> CI tests. If the lock file has drifted, the build fails with `the lock
+> file ... needs to be updated but --locked was passed`. What to do then
+> depends on who you are:
+>
+> - **Building locally?** Just drop `--locked` and re-run the command. That
+>   resolves the newest semver-compatible dependency versions, which is fine
+>   for a local build — but be aware the resulting graph was not tested by CI.
+> - **Maintainers:** refresh the committed lock so `--locked` works for
+>   everyone again, and do it with the optional `cs-storage` backends active
+>   (a default-features `cargo update` will not add their never-resolved
+>   dependencies to the lock): run `cargo build --features cs-storage/webdav,cs-storage/gdrive,cs-storage/onedrive`
+>   once without `--locked`, then commit the refreshed `Cargo.lock`.
 
 ### Planned / not yet published
 
