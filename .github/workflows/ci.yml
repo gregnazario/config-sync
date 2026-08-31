@@ -89,14 +89,16 @@ jobs:
   # between the committed Cargo.lock and the manifests (including the optional
   # cs-storage backend dependencies) fails CI instead of failing for users
   # following the documented install path. The toolchain is pinned to the
-  # documented Rust 1.85 minimum so docs and CI cannot drift apart on
+  # minimum the documented commands require: 1.86, which the optional
+  # cs-storage backend dependencies in the current lockfile need (the default
+  # build itself needs only 1.85). This keeps docs and CI from drifting on
   # compiler requirements; stable stays in the other jobs for clippy/fmt.
   install-docs:
     name: README install commands (--locked)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85
+      - uses: dtolnay/rust-toolchain@1.86
         with:
           targets: x86_64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2

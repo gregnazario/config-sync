@@ -44,7 +44,9 @@ any other package manager. For now, build from source:
 git clone https://github.com/gregnazario/config-sync.git
 cd config-sync
 
-# Requires: Rust 1.85+, plus native build tools — a C toolchain, CMake, and
+# Requires: Rust 1.85+ for the default build (1.86+ with the optional cloud
+#   backends below — the current Cargo.lock pulls idna/icu crates that need
+#   1.86), plus native build tools — a C toolchain, CMake, and
 #   pkg-config (the liboqs-based PQ-crypto crates and the default keyring
 #   backend compile/link native code):
 #   Debian/Ubuntu: ./scripts/install-native-deps.sh (installs the C toolchain,
