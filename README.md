@@ -47,7 +47,8 @@ cd config-sync
 # Requires: Rust 1.85+, plus native build tools — a C toolchain, CMake, and
 #   pkg-config (the liboqs-based PQ-crypto crates and the default keyring
 #   backend compile/link native code):
-#   Debian/Ubuntu: sudo apt-get install -y cmake build-essential pkg-config libdbus-1-dev libclang-dev
+#   Debian/Ubuntu: ./scripts/install-native-deps.sh (installs the C toolchain,
+#     CMake, pkg-config, libdbus, and libclang via apt-get)
 #   macOS: Xcode command line tools, then: brew install cmake
 #   Windows: MSVC Build Tools + CMake
 cargo build --release --locked
