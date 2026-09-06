@@ -24,6 +24,8 @@ as_root() {
 }
 
 as_root apt-get update
-# C toolchain + CMake + pkg-config for the liboqs-based PQ-crypto crates,
-# libdbus for the default keyring backend, libclang for bindgen.
-as_root apt-get install -y cmake build-essential pkg-config libdbus-1-dev libclang-dev
+# C toolchain + CMake + pkg-config for the native sys crates (aws-lc-sys and
+# friends), libdbus for the default keyring backend. No libclang: the
+# dependency tree has no bindgen (the only *bindgen crates in Cargo.lock are
+# wasm-bindgen/wit-bindgen, which are pure-Rust and wasm-target-only).
+as_root apt-get install -y cmake build-essential pkg-config libdbus-1-dev

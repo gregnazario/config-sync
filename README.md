@@ -50,7 +50,7 @@ cd config-sync
 #   pkg-config (the liboqs-based PQ-crypto crates and the default keyring
 #   backend compile/link native code):
 #   Debian/Ubuntu: ./scripts/install-native-deps.sh (installs the C toolchain,
-#     CMake, pkg-config, libdbus, and libclang via apt-get)
+#     CMake, pkg-config, and libdbus via apt-get)
 #   macOS: Xcode command line tools, then: brew install cmake
 #   Windows: MSVC Build Tools + CMake
 cargo build --release --locked
