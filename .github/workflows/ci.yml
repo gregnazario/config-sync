@@ -85,14 +85,14 @@ jobs:
         run: cargo fmt --all -- --check
 
   # ---- Documented install commands (README "Install") --------------------
-  # Runs the two commands from the README verbatim with --locked so any drift
-  # between the committed Cargo.lock and the manifests (including the optional
-  # cs-storage backend dependencies) fails CI instead of failing for users
-  # following the documented install path. Each build runs on exactly the
-  # toolchain minimum the README documents for it: 1.85 for the default build,
-  # 1.86 for the optional cs-storage backends (the current lockfile's
-  # idna/icu crates need 1.86). This keeps docs and CI from drifting on
-  # compiler requirements; stable stays in the other jobs for clippy/fmt.
+  # Extracts and executes the `cargo build` command lines documented in the
+  # README's Install section (with --locked in the README text), so the README
+  # stays the single source of truth: if the documented commands change, this
+  # job tests the new commands, and if the block disappears the job fails.
+  # Each build runs on exactly the toolchain minimum the README documents for
+  # it: 1.85 for the default build, 1.86 for the optional cs-storage backends
+  # (the current lockfile's idna/icu crates need 1.86). Stable stays in the
+  # other jobs for clippy/fmt.
   install-docs:
     name: README install commands (--locked, at documented minimums)
     runs-on: ubuntu-22.04
@@ -104,13 +104,23 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install native build deps (same script the README points to)
         run: scripts/install-native-deps.sh
-      - name: Default build at its documented minimum (Rust 1.85)
-        run: cargo build --release --locked
+      - name: Default build — the README's non-backend install command(s), on Rust 1.85
+        run: |
+          set -euo pipefail
+          grep -E '^cargo build ' README.md | grep -v -- '--features' | while IFS= read -r cmd; do
+            echo "+ $cmd"
+            bash -c "$cmd"
+          done
       - uses: dtolnay/rust-toolchain@1.86
         with:
           targets: x86_64-unknown-linux-gnu
-      - name: Optional cloud backends build at their documented minimum (Rust 1.86)
-        run: cargo build --release --locked --features cs-storage/webdav,cs-storage/gdrive,cs-storage/onedrive
+      - name: Optional cloud backends build — the README's backend install command(s), on Rust 1.86
+        run: |
+          set -euo pipefail
+          grep -E '^cargo build .*--features' README.md | while IFS= read -r cmd; do
+            echo "+ $cmd"
+            bash -c "$cmd"
+          done
 
   # ---- FreeBSD (x86_64) --------------------------------------------------
   # GitHub has no FreeBSD runner; build+test inside a FreeBSD VM.
