@@ -46,13 +46,23 @@ cd config-sync
 
 # Requires: Rust 1.85+ for the default build (1.86+ with the optional cloud
 #   backends below — the current Cargo.lock pulls idna/icu crates that need
-#   1.86), plus native build tools — a C toolchain, CMake, and
-#   pkg-config (the liboqs-based PQ-crypto crates and the default keyring
-#   backend compile/link native code):
-#   Debian/Ubuntu: ./scripts/install-native-deps.sh (installs the C toolchain,
-#     CMake, pkg-config, and libdbus via apt-get)
-#   macOS: Xcode command line tools, then: brew install cmake
-#   Windows: MSVC Build Tools + CMake
+#   1.86). The post-quantum crypto itself is pure Rust (RustCrypto ml-kem);
+#   native build tools are only needed as follows:
+#   - Default build: a C toolchain only (rustc links via cc) — no CMake or
+#     pkg-config required.
+#   - Optional cloud backends: additionally CMake, plus pkg-config on Linux
+#     (rustls' aws-lc-sys TLS provider compiles AWS-LC C code).
+#   Per OS (the line covers both builds; skip CMake/pkg-config if you only
+#   want the default build):
+#     Debian/Ubuntu: ./scripts/install-native-deps.sh (installs everything
+#       above via apt-get)
+#     Fedora/RHEL:   sudo dnf install gcc gcc-c++ make cmake pkgconf
+#     Arch:          sudo pacman -S base-devel cmake
+#     Alpine:        sudo apk add build-base cmake pkgconf
+#     macOS:         xcode-select --install  (backends: + brew install cmake)
+#     Windows:       MSVC Build Tools, "Desktop development with C++"
+#                    (backends: + CMake, e.g. choco install cmake)
+#     FreeBSD:       pkg install rust gcc gmake  (backends: + cmake pkgconf)
 cargo build --release --locked
 # Binary: target/release/config-sync
 
