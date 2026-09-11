@@ -1,5 +1,6 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # scripts/install-native-deps.sh
+# POSIX sh (works under busybox ash on stock Alpine — no bash required).
 # Install the native packages required to build config-sync from source:
 #   - every build needs a C toolchain (rustc links via cc)
 #   - Linux keyring additionally needs pkg-config + libdbus: keyring's
