@@ -116,12 +116,13 @@ jobs:
           if command -v cmake >/dev/null 2>&1; then echo "cmake is still present"; exit 1; fi
           # Commands come from the README's Install section only, and this
           # step must match exactly one non-backend `cargo build` line.
-          cmds=$(sed -n '/^## Install$/,/^## /p' README.md | grep -E '^cargo build ' | grep -v -- '--features')
+          cmds=$(sed -n '/^## Install$/,/^## /p' README.md | grep -E '^cargo build ' | grep -v -- '--features' || true)
           [ "$(printf '%s\n' "$cmds" | grep -c .)" -eq 1 ] || { echo "expected exactly 1 default cargo build command in the Install section"; exit 1; }
           while IFS= read -r cmd; do
             echo "+ $cmd"
             bash -c "$cmd"
           done <<< "$cmds"
+          test -x target/release/config-sync || { echo "the README promises the binary at target/release/config-sync, but it is not there"; exit 1; }
       - uses: dtolnay/rust-toolchain@1.86
         with:
           targets: x86_64-unknown-linux-gnu
@@ -134,7 +135,7 @@ jobs:
           sudo apt-get install -y -qq cmake >/dev/null
           # Commands come from the README's Install section only, and this
           # step must match exactly one `--features` cargo build line.
-          cmds=$(sed -n '/^## Install$/,/^## /p' README.md | grep -E '^cargo build .*--features')
+          cmds=$(sed -n '/^## Install$/,/^## /p' README.md | grep -E '^cargo build .*--features' || true)
           [ "$(printf '%s\n' "$cmds" | grep -c .)" -eq 1 ] || { echo "expected exactly 1 backends cargo build command in the Install section"; exit 1; }
           while IFS= read -r cmd; do
             echo "+ $cmd"

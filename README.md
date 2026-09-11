@@ -77,9 +77,11 @@ cargo build --release --locked --features cs-storage/webdav,cs-storage/gdrive,cs
 > file ... needs to be updated but --locked was passed`. What to do then
 > depends on who you are:
 >
-> - **Building locally?** Just drop `--locked` and re-run the command. That
->   resolves the newest semver-compatible dependency versions, which is fine
->   for a local build — but be aware the resulting graph was not tested by CI.
+> - **Building locally?** Just drop `--locked` and re-run the command. Cargo
+>   updates `Cargo.lock` only as much as needed to make it resolve again,
+>   keeping the existing pins — so you still get a mostly-CI-tested graph,
+>   not a fresh resolution. Run `cargo update` explicitly if you actually
+>   want the newest compatible versions.
 > - **Maintainers:** refresh the committed lock so `--locked` works for
 >   everyone again, and do it with the optional `cs-storage` backends active
 >   (a default-features `cargo update` will not add their never-resolved
