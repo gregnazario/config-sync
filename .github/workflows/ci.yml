@@ -36,8 +36,8 @@ jobs:
         with:
           targets: ${{ matrix.target }}
           components: clippy, rustfmt
-      - name: Install CMake
-        run: brew install cmake || true
+      # No CMake installed on purpose: validates the README's claim that the
+      # default macOS build needs nothing beyond Xcode CLT.
       - name: Build
         run: cargo build --workspace --target ${{ matrix.target }}
       - name: Test (no keyring/biometric — no keychain prompts in CI)
@@ -56,8 +56,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
-      - name: Install CMake
-        run: choco install cmake -y --installargs 'ADD_CMAKE_TO_PATH=System'
+      # No CMake installed on purpose: validates the README's claim that the
+      # default Windows build needs nothing beyond MSVC Build Tools.
       - name: Build
         run: cargo build --workspace --target x86_64-pc-windows-msvc
       - name: Test (no keyring/biometric — no keychain prompts in CI)
@@ -92,10 +92,16 @@ jobs:
   # Each build runs on exactly the toolchain minimum the README documents for
   # it: 1.85 for the default build, 1.86 for the optional cs-storage backends
   # (the current lockfile's idna/icu crates need 1.86). Stable stays in the
-  # other jobs for clippy/fmt.
+  # other jobs for clippy/fmt. Scope note: this job validates the Linux path
+  # and the default-build no-CMake claim (CMake is stripped before the
+  # default build); the macOS and Windows matrix jobs validate their own
+  # no-CMake prerequisites by building with CMake deliberately absent. The
+  # FreeBSD prerequisite line is the only one not exercised in CI.
   install-docs:
     name: README install commands (--locked, at documented minimums)
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.85

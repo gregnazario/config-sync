@@ -54,7 +54,8 @@ cd config-sync
 #     native keychains, so nothing beyond the OS toolchain there.
 #   - Optional cloud backends: additionally CMake on every platform (rustls'
 #     aws-lc-sys TLS provider compiles AWS-LC C code).
-#   Per OS (covers both builds; skip CMake if you only want the default):
+#   Per OS (covers both builds; for a default-only setup pass --no-cmake to
+#     the script and skip the CMake notes below):
 #     Debian/Ubuntu, Fedora/RHEL, Arch, Alpine, openSUSE:
 #       ./scripts/install-native-deps.sh (detects the system package
 #       manager — apt/dnf/yum/pacman/apk/zypper — and installs everything
