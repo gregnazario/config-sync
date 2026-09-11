@@ -2,12 +2,14 @@
 # scripts/install-native-deps.sh
 # Install the native packages required to build config-sync from source:
 #   - every build needs a C toolchain (rustc links via cc)
-#   - the optional cloud backends additionally need CMake + pkg-config
-#     (rustls' aws-lc-sys TLS provider compiles AWS-LC C code)
-# No libdbus: the Linux keyring path is pure Rust (linux-keyutils + zbus) —
-# only the BSD keyring backend compiles the libdbus-based crate. No libclang:
-# the dependency tree has no bindgen (the only *bindgen crates in Cargo.lock
-# are wasm-bindgen/wit-bindgen, which are pure-Rust and wasm-target-only).
+#   - Linux keyring additionally needs pkg-config + libdbus: keyring's
+#     linux-native-sync-persistent backend compiles the libdbus-sys crate
+#     (macOS/Windows use their native keychain backends, no libdbus there)
+#   - the optional cloud backends additionally need CMake (rustls' aws-lc-sys
+#     TLS provider compiles AWS-LC C code)
+# No libclang: the dependency tree has no bindgen (the only *bindgen crates
+# in Cargo.lock are wasm-bindgen/wit-bindgen, which are pure-Rust and
+# wasm-target-only).
 # CI calls this script and the README tells users to run it, so the package
 # list only ever lives in one place.
 set -eu
@@ -26,15 +28,15 @@ as_root() {
 
 if command -v apt-get >/dev/null 2>&1; then
   as_root apt-get update
-  as_root apt-get install -y build-essential cmake pkg-config
+  as_root apt-get install -y build-essential cmake pkg-config libdbus-1-dev
 elif command -v dnf >/dev/null 2>&1; then
-  as_root dnf install -y gcc gcc-c++ make cmake pkgconf
+  as_root dnf install -y gcc gcc-c++ make dbus-devel pkgconf-pkg-config cmake
 elif command -v yum >/dev/null 2>&1; then
-  as_root yum install -y gcc gcc-c++ make cmake pkgconf
+  as_root yum install -y gcc gcc-c++ make dbus-devel pkgconf-pkg-config cmake
 elif command -v pacman >/dev/null 2>&1; then
-  as_root pacman -S --needed --noconfirm base-devel cmake
+  as_root pacman -S --needed --noconfirm base-devel dbus cmake
 elif command -v apk >/dev/null 2>&1; then
-  as_root apk add build-base cmake pkgconf
+  as_root apk add build-base dbus-dev pkgconf cmake
 else
   echo "install-native-deps.sh: no supported package manager found (apt/dnf/yum/pacman/apk)." >&2
   echo "See the README Install section for per-OS prerequisites" >&2

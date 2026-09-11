@@ -48,21 +48,24 @@ cd config-sync
 #   backends below — the current Cargo.lock pulls idna/icu crates that need
 #   1.86). The post-quantum crypto itself is pure Rust (RustCrypto ml-kem);
 #   native build tools are only needed as follows:
-#   - Default build: a C toolchain only (rustc links via cc) — no CMake or
-#     pkg-config required.
-#   - Optional cloud backends: additionally CMake, plus pkg-config on Linux
-#     (rustls' aws-lc-sys TLS provider compiles AWS-LC C code).
-#   Per OS (the line covers both builds; skip CMake/pkg-config if you only
-#   want the default build):
+#   - Default build: a C toolchain (rustc links via cc) — no CMake. On Linux
+#     also pkg-config + libdbus dev headers (the keyring's Secret Service
+#     component compiles the libdbus-based crate); macOS/Windows use their
+#     native keychains, so nothing beyond the OS toolchain there.
+#   - Optional cloud backends: additionally CMake on every platform (rustls'
+#     aws-lc-sys TLS provider compiles AWS-LC C code).
+#   Per OS (covers both builds; skip CMake if you only want the default):
 #     Debian/Ubuntu: ./scripts/install-native-deps.sh (installs everything
 #       above via apt-get)
-#     Fedora/RHEL:   sudo dnf install gcc gcc-c++ make cmake pkgconf
-#     Arch:          sudo pacman -S base-devel cmake
-#     Alpine:        sudo apk add build-base cmake pkgconf
+#     Fedora/RHEL:   sudo dnf install gcc gcc-c++ make dbus-devel \
+#                      pkgconf-pkg-config cmake
+#     Arch:          sudo pacman -S base-devel dbus cmake
+#     Alpine:        sudo apk add build-base dbus-dev pkgconf cmake
 #     macOS:         xcode-select --install  (backends: + brew install cmake)
 #     Windows:       MSVC Build Tools, "Desktop development with C++"
 #                    (backends: + CMake, e.g. choco install cmake)
-#     FreeBSD:       pkg install rust gcc gmake  (backends: + cmake pkgconf)
+#     FreeBSD:       pkg install rust gcc gmake dbus pkgconf
+#                    (backends: + cmake)
 cargo build --release --locked
 # Binary: target/release/config-sync
 
