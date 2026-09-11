@@ -55,12 +55,10 @@ cd config-sync
 #   - Optional cloud backends: additionally CMake on every platform (rustls'
 #     aws-lc-sys TLS provider compiles AWS-LC C code).
 #   Per OS (covers both builds; skip CMake if you only want the default):
-#     Debian/Ubuntu: ./scripts/install-native-deps.sh (installs everything
-#       above via apt-get)
-#     Fedora/RHEL:   sudo dnf install gcc gcc-c++ make dbus-devel \
-#                      pkgconf-pkg-config cmake
-#     Arch:          sudo pacman -S base-devel dbus cmake
-#     Alpine:        sudo apk add build-base dbus-dev pkgconf cmake
+#     Debian/Ubuntu, Fedora/RHEL, Arch, Alpine, openSUSE:
+#       ./scripts/install-native-deps.sh (detects the system package
+#       manager — apt/dnf/yum/pacman/apk/zypper — and installs everything
+#       above; that script is the authoritative package list)
 #     macOS:         xcode-select --install  (backends: + brew install cmake)
 #     Windows:       MSVC Build Tools, "Desktop development with C++"
 #                    (backends: + CMake, e.g. choco install cmake)

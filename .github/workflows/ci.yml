@@ -104,23 +104,39 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install native build deps (same script the README points to)
         run: scripts/install-native-deps.sh
-      - name: Default build — the README's non-backend install command(s), on Rust 1.85
+      - name: Default build — the README's non-backend install command(s), on Rust 1.85, with CMake removed
         run: |
           set -euo pipefail
-          grep -E '^cargo build ' README.md | grep -v -- '--features' | while IFS= read -r cmd; do
+          # The README claims the default build needs no CMake; prove it by
+          # removing the package before the documented commands run.
+          sudo apt-get remove -y cmake >/dev/null
+          if command -v cmake >/dev/null 2>&1; then echo "cmake is still present"; exit 1; fi
+          # Commands come from the README's Install section only, and this
+          # step must match exactly one non-backend `cargo build` line.
+          cmds=$(sed -n '/^## Install$/,/^## /p' README.md | grep -E '^cargo build ' | grep -v -- '--features')
+          [ "$(printf '%s\n' "$cmds" | grep -c .)" -eq 1 ] || { echo "expected exactly 1 default cargo build command in the Install section"; exit 1; }
+          while IFS= read -r cmd; do
             echo "+ $cmd"
             bash -c "$cmd"
-          done
+          done <<< "$cmds"
       - uses: dtolnay/rust-toolchain@1.86
         with:
           targets: x86_64-unknown-linux-gnu
       - name: Optional cloud backends build — the README's backend install command(s), on Rust 1.86
         run: |
           set -euo pipefail
-          grep -E '^cargo build .*--features' README.md | while IFS= read -r cmd; do
+          # The backends build needs CMake again (aws-lc-sys); reinstall what
+          # the default step removed.
+          sudo apt-get update -qq >/dev/null
+          sudo apt-get install -y -qq cmake >/dev/null
+          # Commands come from the README's Install section only, and this
+          # step must match exactly one `--features` cargo build line.
+          cmds=$(sed -n '/^## Install$/,/^## /p' README.md | grep -E '^cargo build .*--features')
+          [ "$(printf '%s\n' "$cmds" | grep -c .)" -eq 1 ] || { echo "expected exactly 1 backends cargo build command in the Install section"; exit 1; }
+          while IFS= read -r cmd; do
             echo "+ $cmd"
             bash -c "$cmd"
-          done
+          done <<< "$cmds"
 
   # ---- FreeBSD (x86_64) --------------------------------------------------
   # GitHub has no FreeBSD runner; build+test inside a FreeBSD VM.

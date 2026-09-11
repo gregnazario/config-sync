@@ -37,8 +37,10 @@ elif command -v pacman >/dev/null 2>&1; then
   as_root pacman -S --needed --noconfirm base-devel dbus cmake
 elif command -v apk >/dev/null 2>&1; then
   as_root apk add build-base dbus-dev pkgconf cmake
+elif command -v zypper >/dev/null 2>&1; then
+  as_root zypper install -y gcc gcc-c++ make dbus-1-devel pkg-config cmake
 else
-  echo "install-native-deps.sh: no supported package manager found (apt/dnf/yum/pacman/apk)." >&2
+  echo "install-native-deps.sh: no supported package manager found (apt/dnf/yum/pacman/apk/zypper)." >&2
   echo "See the README Install section for per-OS prerequisites" >&2
   echo "(macOS, Windows, FreeBSD, and the Linux distributions above)." >&2
   exit 1
