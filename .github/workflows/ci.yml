@@ -108,8 +108,11 @@ jobs:
         run: |
           set -euo pipefail
           # The README claims the default build needs no CMake; prove it by
-          # removing the package before the documented commands run.
-          sudo apt-get remove -y cmake >/dev/null
+          # removing the package before the documented commands run. The
+          # runner image installs CMake under /usr/local, outside dpkg, so
+          # remove that copy too.
+          sudo apt-get remove -y cmake >/dev/null 2>&1 || true
+          sudo rm -f /usr/local/bin/cmake /usr/local/bin/ctest /usr/local/bin/cpack
           if command -v cmake >/dev/null 2>&1; then echo "cmake is still present"; exit 1; fi
           # Commands come from the README's Install section only, and this
           # step must match exactly one non-backend `cargo build` line.
