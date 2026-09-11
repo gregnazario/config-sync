@@ -36,43 +36,66 @@ WebDAV, or a local folder). Your cloud provider never sees plaintext.
 
 ## Install
 
-### One-liner (any platform with Rust)
+config-sync is **not yet published** -- there is no crate on crates.io, no
+release tags, and no packages in Homebrew, WinGet, Chocolatey, AUR, mise, or
+any other package manager. For now, build from source:
 
 ```sh
-cargo binstall config-sync
-```
+git clone https://github.com/gregnazario/config-sync.git
+cd config-sync
 
-### Package managers
-
-| Platform | Method | Command |
-|---|---|---|
-| Any (Rust toolchain) | cargo-binstall | `cargo binstall config-sync` |
-| macOS / Linux | Homebrew | `brew tap gregnazario/config-sync && brew install config-sync` |
-| Debian / Ubuntu | apt (.deb) | `sudo dpkg -i config-sync_*_amd64.deb` |
-| Fedora / RHEL / openSUSE | dnf / zypper (.rpm) | `sudo dnf install config-sync-*.rpm` or `sudo zypper install config-sync-*.rpm` |
-| Alpine | apk | `apk add --allow-untrusted config-sync-*.apk` |
-| Void Linux | xbps | `xbps-install config-sync` |
-| Arch Linux | AUR | `yay -S config-sync-bin` |
-| Gentoo | Portage (ebuild) | `emerge config-sync-bin` |
-| Any (mise) | mise | `mise use -g ubi:gregnazario/config-sync` |
-| Windows | Chocolatey | `choco install config-sync` |
-| Windows | WinGet | `winget install gregnazario.config-sync` |
-| Windows | Scoop | `scoop install config-sync` |
-| NixOS | Nix | `nix run github:gregnazario/config-sync` |
-| Linux (portable) | Flatpak | `flatpak install config-sync` |
-| Linux (portable) | Snap | `sudo snap install config-sync --classic` |
-| Linux (portable) | AppImage | `chmod +x config-sync-*.AppImage && ./config-sync-*.AppImage` |
-
-### Build from source
-
-```sh
-# Requires: Rust 1.85+ (ML-KEM is pure Rust; no C toolchain needed)
-cargo build --release
+# Requires: Rust 1.85+ for the default build (1.86+ with the optional cloud
+#   backends below — the current Cargo.lock pulls idna/icu crates that need
+#   1.86). The post-quantum crypto itself is pure Rust (RustCrypto ml-kem);
+#   native build tools are only needed as follows:
+#   - Default build: a C toolchain (rustc links via cc) — no CMake. On Linux
+#     also pkg-config + libdbus dev headers (the keyring's Secret Service
+#     component compiles the libdbus-based crate); macOS/Windows use their
+#     native keychains, so nothing beyond the OS toolchain there.
+#   - Optional cloud backends: additionally CMake on every platform (rustls'
+#     aws-lc-sys TLS provider compiles AWS-LC C code).
+#   Per OS (covers both builds; for a default-only setup pass --no-cmake to
+#     the script and skip the CMake notes below):
+#     Debian/Ubuntu, Fedora/RHEL, Arch, Alpine, openSUSE:
+#       ./scripts/install-native-deps.sh (detects the system package
+#       manager — apt/dnf/yum/pacman/apk/zypper — and installs everything
+#       above; that script is the authoritative package list)
+#     macOS:         xcode-select --install  (backends: + brew install cmake)
+#     Windows:       MSVC Build Tools, "Desktop development with C++"
+#                    (backends: + CMake, e.g. choco install cmake)
+#     FreeBSD:       pkg install rust gcc gmake dbus pkgconf
+#                    (backends: + cmake)
+cargo build --release --locked
 # Binary: target/release/config-sync
 
 # Optional cloud backends:
-cargo build --release --features cs-storage/webdav,cs-storage/gdrive,cs-storage/onedrive
+cargo build --release --locked --features cs-storage/webdav,cs-storage/gdrive,cs-storage/onedrive
 ```
+
+> **Note:** `--locked` builds against the `Cargo.lock` committed to the
+> repository, so a fresh clone reproduces exactly the dependency graph that
+> CI tests. If the lock file has drifted, the build fails with `the lock
+> file ... needs to be updated but --locked was passed`. What to do then
+> depends on who you are:
+>
+> - **Building locally?** Just drop `--locked` and re-run the command. Cargo
+>   updates `Cargo.lock` only as much as needed to make it resolve again,
+>   keeping the existing pins — so you still get a mostly-CI-tested graph,
+>   not a fresh resolution. Run `cargo update` explicitly if you actually
+>   want the newest compatible versions.
+> - **Maintainers:** refresh the committed lock so `--locked` works for
+>   everyone again, and do it with the optional `cs-storage` backends active
+>   (a default-features `cargo update` will not add their never-resolved
+>   dependencies to the lock): run `cargo build --features cs-storage/webdav,cs-storage/gdrive,cs-storage/onedrive`
+>   once without `--locked`, then commit the refreshed `Cargo.lock`.
+
+### Planned / not yet published
+
+Packaging recipes for a range of platforms and package managers (Homebrew,
+WinGet, Chocolatey, Scoop, AUR, Nix, Flatpak, Snap, AppImage, and more) live
+under [`packaging/`](packaging/), but none are reachable through a package
+manager yet. Official release binaries and registry publishing are planned for
+a future release.
 
 ## Quick start
 

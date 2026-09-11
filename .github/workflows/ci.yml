@@ -46,8 +46,15 @@ jobs:
         with:
           targets: ${{ matrix.target }}
           components: clippy, rustfmt
-      - name: Install CMake
-        run: brew install cmake || true
+      # The runner image preinstalls CMake; remove it so this build genuinely
+      # validates the README's claim that the default macOS build needs
+      # nothing beyond Xcode CLT.
+      - name: Remove CMake
+        run: |
+          set -eu
+          sudo rm -f /usr/local/bin/cmake /usr/local/bin/ctest /usr/local/bin/cpack
+          sudo rm -f /opt/homebrew/bin/cmake /opt/homebrew/bin/ctest /opt/homebrew/bin/cpack
+          if command -v cmake >/dev/null 2>&1; then echo "cmake is still present"; exit 1; fi
       - name: Build
         run: cargo build --workspace --target ${{ matrix.target }}
       - name: Test (no keyring/biometric — no keychain prompts in CI)
@@ -67,8 +74,18 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
-      - name: Install CMake
-        run: choco install cmake -y --installargs 'ADD_CMAKE_TO_PATH=System'
+      # The runner image preinstalls CMake; remove it so this build genuinely
+      # validates the README's claim that the default Windows build needs
+      # nothing beyond MSVC Build Tools.
+      - name: Remove CMake
+        shell: pwsh
+        run: |
+          $found = Get-Command cmake -All -ErrorAction SilentlyContinue
+          foreach ($cmd in $found) { Remove-Item -Force $cmd.Source }
+          if (Get-Command cmake -ErrorAction SilentlyContinue) {
+            Write-Host "::error::cmake is still present"
+            exit 1
+          }
       - name: Build
         run: cargo build --workspace --target x86_64-pc-windows-msvc
       - name: Test (no keyring/biometric — no keychain prompts in CI)
@@ -86,9 +103,7 @@ jobs:
           targets: x86_64-unknown-linux-gnu
           components: clippy, rustfmt
       - name: Install native build deps (gcc, cmake, dbus for keyring backend)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake build-essential pkg-config libdbus-1-dev libclang-dev
+        run: scripts/install-native-deps.sh
       - name: Build
         run: cargo build --workspace --target x86_64-unknown-linux-gnu
       - name: Test (no keyring/biometric — no Secret Service in CI)
@@ -97,6 +112,70 @@ jobs:
         run: cargo clippy --workspace --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
       - name: fmt
         run: cargo fmt --all -- --check
+
+  # ---- Documented install commands (README "Install") --------------------
+  # Extracts and executes the `cargo build` command lines documented in the
+  # README's Install section (with --locked in the README text), so the README
+  # stays the single source of truth: if the documented commands change, this
+  # job tests the new commands, and if the block disappears the job fails.
+  # Each build runs on exactly the toolchain minimum the README documents for
+  # it: 1.85 for the default build, 1.86 for the optional cs-storage backends
+  # (the current lockfile's idna/icu crates need 1.86). Stable stays in the
+  # other jobs for clippy/fmt. Scope note: this job validates the Linux path
+  # and the default-build no-CMake claim (CMake is stripped before the
+  # default build); the macOS and Windows matrix jobs validate their own
+  # no-CMake prerequisites by building with CMake deliberately absent. The
+  # FreeBSD prerequisite line is the only one not exercised in CI.
+  install-docs:
+    name: README install commands (--locked, at documented minimums)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@v2
+      - name: Install native build deps (same script the README points to)
+        run: scripts/install-native-deps.sh --no-cmake
+      - name: Default build — the README's non-backend install command(s), on Rust 1.85, with CMake removed
+        run: |
+          set -euo pipefail
+          # The README claims the default build needs no CMake; prove it by
+          # removing the package before the documented commands run. The
+          # runner image installs CMake under /usr/local, outside dpkg, so
+          # remove that copy too (the --no-cmake script run above only stops
+          # CMake being installed via apt).
+          sudo rm -f /usr/local/bin/cmake /usr/local/bin/ctest /usr/local/bin/cpack
+          if command -v cmake >/dev/null 2>&1; then echo "cmake is still present"; exit 1; fi
+          # Commands come from the README's Install section only, and this
+          # step must match exactly one non-backend `cargo build` line.
+          cmds=$(sed -n '/^## Install$/,/^## /p' README.md | grep -E '^cargo build ' | grep -v -- '--features' || true)
+          [ "$(printf '%s\n' "$cmds" | grep -c .)" -eq 1 ] || { echo "expected exactly 1 default cargo build command in the Install section"; exit 1; }
+          while IFS= read -r cmd; do
+            echo "+ $cmd"
+            bash -c "$cmd"
+          done <<< "$cmds"
+          test -x target/release/config-sync || { echo "the README promises the binary at target/release/config-sync, but it is not there"; exit 1; }
+      - uses: dtolnay/rust-toolchain@1.86
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - name: Optional cloud backends build — the README's backend install command(s), on Rust 1.86
+        run: |
+          set -euo pipefail
+          # The backends build needs CMake again (aws-lc-sys); reinstall what
+          # the default step removed.
+          sudo apt-get update -qq >/dev/null
+          sudo apt-get install -y -qq cmake >/dev/null
+          # Commands come from the README's Install section only, and this
+          # step must match exactly one `--features` cargo build line.
+          cmds=$(sed -n '/^## Install$/,/^## /p' README.md | grep -E '^cargo build .*--features' || true)
+          [ "$(printf '%s\n' "$cmds" | grep -c .)" -eq 1 ] || { echo "expected exactly 1 backends cargo build command in the Install section"; exit 1; }
+          while IFS= read -r cmd; do
+            echo "+ $cmd"
+            bash -c "$cmd"
+          done <<< "$cmds"
 
   # ---- FreeBSD (x86_64) --------------------------------------------------
   # GitHub has no FreeBSD runner; build+test inside a FreeBSD VM.
