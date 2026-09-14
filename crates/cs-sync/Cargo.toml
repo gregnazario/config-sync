@@ -16,7 +16,7 @@ tokio = { version = "1", features = ["fs", "io-util", "rt", "macros"] }
 bytes = { workspace = true }
 sha2 = "0.10"
 futures-util = "0.3"
-getrandom = "0.3"
+getrandom = "0.4"
 hex = "0.4"
 
 [dev-dependencies]
