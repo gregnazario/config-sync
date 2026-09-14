@@ -19,7 +19,7 @@ license = "MIT OR Apache-2.0"
 rust-version = "1.85"
 
 [workspace.dependencies]
-thiserror = "1"
+thiserror = "2"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 serde = { version = "1", features = ["derive"] }
 bytes = "1"

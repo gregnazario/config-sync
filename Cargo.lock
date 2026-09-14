@@ -1190,7 +1190,7 @@ dependencies = [
  "postcard",
  "serde",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.19",
  "tokio",
  "toml",
 ]
@@ -1200,7 +1200,7 @@ name = "cs-config"
 version = "0.1.0"
 dependencies = [
  "serde",
- "thiserror 1.0.69",
+ "thiserror 2.0.19",
  "toml",
 ]
 
@@ -1218,7 +1218,7 @@ dependencies = [
  "serde",
  "sha2 0.11.0",
  "subtle",
- "thiserror 1.0.69",
+ "thiserror 2.0.19",
  "x25519-dalek",
  "zeroize",
 ]
@@ -1257,7 +1257,7 @@ dependencies = [
  "serde",
  "sha2 0.10.9",
  "sharks",
- "thiserror 1.0.69",
+ "thiserror 2.0.19",
  "zbus",
  "zeroize",
 ]
@@ -1270,7 +1270,7 @@ dependencies = [
  "postcard",
  "serde",
  "sha2 0.10.9",
- "thiserror 1.0.69",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
@@ -1293,7 +1293,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.19",
  "tokio",
 ]
 
@@ -1313,7 +1313,7 @@ dependencies = [
  "serde",
  "sha2 0.10.9",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.19",
  "tokio",
 ]
 
@@ -1325,7 +1325,7 @@ dependencies = [
  "cs-manifest",
  "cs-sync",
  "dialoguer",
- "thiserror 1.0.69",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
