@@ -8,7 +8,7 @@ license.workspace = true
 thiserror = { workspace = true }
 zeroize = { workspace = true }
 serde = { workspace = true }
-getrandom = "0.3"
+getrandom = "0.4"
 ml-kem = { version = "0.3", features = ["getrandom", "zeroize"] }
 x25519-dalek = { version = "2", features = ["static_secrets", "getrandom"] }
 ed25519-dalek = "2" 
