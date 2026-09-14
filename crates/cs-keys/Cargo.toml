@@ -12,7 +12,7 @@ cs-crypto = { path = "../cs-crypto" }
 base64 = "0.22"
 serde = { workspace = true }
 postcard = { version = "1", features = ["alloc"] }
-argon2 = "0.5"
+argon2 = "0.6"
 chacha20poly1305 = "0.10"
 bip39 = { version = "2", features = ["rand"] }
 sharks = "0.5"
